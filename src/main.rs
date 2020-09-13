@@ -1,42 +1,17 @@
-use bevy::{input::keyboard::*, input::mouse::*, prelude::*};
+use bevy::{input::keyboard::*, input::mouse::*, winit::WinitWindows, prelude::*};
+use bevy_fly_camera::{FlyCamera, FlyCameraPlugin};
+use winit::dpi::LogicalPosition;
 
 fn main() {
     App::build()
         .add_resource(Msaa { samples: 4 })
         .add_default_plugins()
+        .add_plugin(FlyCameraPlugin)
         .add_startup_system(setup.system())
         .init_resource::<InputState>()
         .add_system(input_handling.system())
         .add_system(player_movement_system.system())
         .run();
-}
-
-struct Player {
-    speed: f32,
-}
-
-fn player_movement_system(
-    time: Res<Time>,
-    keyboard_input: Res<Input<KeyCode>>,
-    mut query: Query<(&Player, &mut Translation)>,
-) {
-    for (player, mut translation) in &mut query.iter() {
-        if keyboard_input.pressed(KeyCode::W) {
-            *translation.0.x_mut() += player.speed * time.delta_seconds;
-        }
-
-        if keyboard_input.pressed(KeyCode::S) {
-            *translation.0.x_mut() -= player.speed * time.delta_seconds;
-        }
-
-        if keyboard_input.pressed(KeyCode::A) {
-            *translation.0.z_mut() -= player.speed * time.delta_seconds;
-        }
-
-        if keyboard_input.pressed(KeyCode::D) {
-            *translation.0.z_mut() += player.speed * time.delta_seconds;
-        }
-    }
 }
 
 /// set up a simple 3D scene
@@ -75,33 +50,56 @@ fn setup(
         .spawn(LightComponents {
             translation: Translation::new(4.0, 8.0, 4.0),
             ..Default::default()
-        })
-        // camera
-        .spawn(Camera3dComponents {
-            transform: Transform::new_sync_disabled(Mat4::face_toward(
-                Vec3::new(-3.0, 5.0, 8.0),
-                Vec3::new(0.0, 0.0, 0.0),
-                Vec3::new(0.0, 1.0, 0.0),
-            )),
-            ..Default::default()
         });
+    // camera
+    commands.spawn(FlyCamera::default());
+}
+
+struct Player {
+    speed: f32,
+}
+
+fn player_movement_system(
+    time: Res<Time>,
+    keyboard_input: Res<Input<KeyCode>>,
+    mut query: Query<(&Player, &mut Translation)>,
+) {
+    for (player, mut translation) in &mut query.iter() {
+        if keyboard_input.pressed(KeyCode::W) {
+            *translation.0.x_mut() += player.speed * time.delta_seconds;
+        }
+
+        if keyboard_input.pressed(KeyCode::S) {
+            *translation.0.x_mut() -= player.speed * time.delta_seconds;
+        }
+
+        if keyboard_input.pressed(KeyCode::A) {
+            *translation.0.z_mut() -= player.speed * time.delta_seconds;
+        }
+
+        if keyboard_input.pressed(KeyCode::D) {
+            *translation.0.z_mut() += player.speed * time.delta_seconds;
+        }
+    }
 }
 
 #[derive(Default)]
 struct InputState {
     keys: EventReader<KeyboardInput>,
     _cursor: EventReader<CursorMoved>,
-    _motion: EventReader<MouseMotion>,
-    _mousebtn: EventReader<MouseButtonInput>,
+    motion: EventReader<MouseMotion>,
+    mousebtn: EventReader<MouseButtonInput>,
     _scroll: EventReader<MouseWheel>,
 }
 
 fn input_handling(
+    windows: ResMut<Windows>,
+    winit: ResMut<bevy::winit::WinitWindows>,
     mut state: ResMut<InputState>,
     ev_keys: Res<Events<KeyboardInput>>,
     _ev_cursor: Res<Events<CursorMoved>>,
-    _ev_motion: Res<Events<MouseMotion>>,
-    _ev_mousebtn: Res<Events<MouseButtonInput>>,
+    ev_motion: Res<Events<MouseMotion>>,
+    ev_mousebtn: Res<Events<MouseButtonInput>>,
     _ev_scroll: Res<Events<MouseWheel>>,
 ) {
     // Keyboard input
@@ -109,10 +107,21 @@ fn input_handling(
         if ev.state.is_pressed() {
             match ev.key_code {
                 Some(key) => match key {
-                    KeyCode::W => {},
-                    KeyCode::S => {},
-                    KeyCode::A => {},
-                    KeyCode::D => {},
+                    KeyCode::Escape => {
+                        match windows.get_primary() {
+                            Some(bevy_window) => {
+                                match winit.get_window(bevy_window.id) {
+                                    Some(window) => { 
+                                        //window.set_cursor_position(winit::dpi::Position::Physical(winit::dpi::PhysicalPosition::new((window.inner_size().width / 2) as i32, (window.inner_size().height / 2) as i32)));
+                                        window.set_cursor_visible(false);
+                                    },
+                                    
+                                    None => {}
+                                }
+                            }
+                            None => { eprintln!("ERROR: cant get primary window"); }
+                        }
+                    }
                     _ => {}
                 },
                 _ => {}
