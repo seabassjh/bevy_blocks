@@ -10,7 +10,7 @@ fn main() {
         .add_startup_system(setup.system())
         .init_resource::<InputState>()
         .add_system(input_handling.system())
-        .add_system(player_movement_system.system())
+        .add_system(third_person_controller::player_movement_system.system())
         .run();
 }
 
@@ -59,34 +59,6 @@ fn setup(
             ..Default::default()
         });
     //commands.spawn(FlyCamera::default());
-}
-
-struct Player {
-    speed: f32,
-}
-
-fn player_movement_system(
-    time: Res<Time>,
-    keyboard_input: Res<Input<KeyCode>>,
-    mut query: Query<(&Player, &mut Transform)>,
-) {
-    for (player, mut transformation) in &mut query.iter() {
-        if keyboard_input.pressed(KeyCode::W) {
-            transformation.translate(Vec3::new(0.0, 0.0, -player.speed * time.delta_seconds));
-        }
-
-        if keyboard_input.pressed(KeyCode::S) {
-            transformation.translate(Vec3::new(0.0, 0.0, player.speed * time.delta_seconds));
-        }
-
-        if keyboard_input.pressed(KeyCode::A) {
-            transformation.translate(Vec3::new(-player.speed * time.delta_seconds, 0.0, 0.0));
-        }
-
-        if keyboard_input.pressed(KeyCode::D) {
-            transformation.translate(Vec3::new(player.speed * time.delta_seconds, 0.0, 0.0));
-        }
-    }
 }
 
 #[derive(Default)]
