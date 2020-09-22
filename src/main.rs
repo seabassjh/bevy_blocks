@@ -1,12 +1,12 @@
 use bevy::{input::keyboard::*, input::mouse::*, winit::WinitWindows, prelude::*};
-use bevy_fly_camera::{FlyCamera, FlyCameraPlugin};
 use winit::dpi::LogicalPosition;
+
+mod third_person_controller;
 
 fn main() {
     App::build()
         .add_resource(Msaa { samples: 4 })
         .add_default_plugins()
-        .add_plugin(FlyCameraPlugin)
         .add_startup_system(setup.system())
         .init_resource::<InputState>()
         .add_system(input_handling.system())
@@ -32,10 +32,17 @@ fn setup(
         .spawn(PbrComponents {
             mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
             material: materials.add(Color::rgb(0.5, 0.4, 0.3).into()),
-            translation: Translation::new(0.0, 1.0, 0.0),
+            transform: Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
             ..Default::default()
         })
         .with(Player { speed: 10.0 })
+        .with_children(|parent| {
+            parent
+                .spawn(Camera3dComponents {
+                    transform: Transform::from_translation_rotation(Vec3::new(0.0, 5.0, 6.0), Quat::from_rotation_x(-30.0 * std::f32::consts::PI / 180.0)),
+                    ..Default::default()
+                });
+        })
         // sphere
         .spawn(PbrComponents {
             mesh: meshes.add(Mesh::from(shape::Icosphere {
@@ -43,16 +50,15 @@ fn setup(
                 radius: 0.5,
             })),
             material: materials.add(Color::rgb(0.1, 0.4, 0.8).into()),
-            translation: Translation::new(1.5, 1.5, 1.5),
+            transform: Transform::from_translation(Vec3::new(1.5, 1.5, 1.5)),
             ..Default::default()
         })
         // light
         .spawn(LightComponents {
-            translation: Translation::new(4.0, 8.0, 4.0),
+            transform: Transform::from_translation(Vec3::new(4.0, 8.0, 4.0)),
             ..Default::default()
         });
-    // camera
-    commands.spawn(FlyCamera::default());
+    //commands.spawn(FlyCamera::default());
 }
 
 struct Player {
@@ -62,23 +68,23 @@ struct Player {
 fn player_movement_system(
     time: Res<Time>,
     keyboard_input: Res<Input<KeyCode>>,
-    mut query: Query<(&Player, &mut Translation)>,
+    mut query: Query<(&Player, &mut Transform)>,
 ) {
-    for (player, mut translation) in &mut query.iter() {
+    for (player, mut transformation) in &mut query.iter() {
         if keyboard_input.pressed(KeyCode::W) {
-            *translation.0.x_mut() += player.speed * time.delta_seconds;
+            transformation.translate(Vec3::new(0.0, 0.0, -player.speed * time.delta_seconds));
         }
 
         if keyboard_input.pressed(KeyCode::S) {
-            *translation.0.x_mut() -= player.speed * time.delta_seconds;
+            transformation.translate(Vec3::new(0.0, 0.0, player.speed * time.delta_seconds));
         }
 
         if keyboard_input.pressed(KeyCode::A) {
-            *translation.0.z_mut() -= player.speed * time.delta_seconds;
+            transformation.translate(Vec3::new(-player.speed * time.delta_seconds, 0.0, 0.0));
         }
 
         if keyboard_input.pressed(KeyCode::D) {
-            *translation.0.z_mut() += player.speed * time.delta_seconds;
+            transformation.translate(Vec3::new(player.speed * time.delta_seconds, 0.0, 0.0));
         }
     }
 }
@@ -107,21 +113,7 @@ fn input_handling(
         if ev.state.is_pressed() {
             match ev.key_code {
                 Some(key) => match key {
-                    KeyCode::Escape => {
-                        match windows.get_primary() {
-                            Some(bevy_window) => {
-                                match winit.get_window(bevy_window.id) {
-                                    Some(window) => { 
-                                        //window.set_cursor_position(winit::dpi::Position::Physical(winit::dpi::PhysicalPosition::new((window.inner_size().width / 2) as i32, (window.inner_size().height / 2) as i32)));
-                                        window.set_cursor_visible(false);
-                                    },
-                                    
-                                    None => {}
-                                }
-                            }
-                            None => { eprintln!("ERROR: cant get primary window"); }
-                        }
-                    }
+                    KeyCode::Escape => {}
                     _ => {}
                 },
                 _ => {}
