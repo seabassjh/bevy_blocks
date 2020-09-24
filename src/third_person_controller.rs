@@ -1,81 +1,120 @@
+use bevy::input::mouse::*;
 use bevy::prelude::*;
-use bevy::{input::mouse::*};
 
 pub struct ThirdPersonControllerPlugin;
 
 impl Plugin for ThirdPersonControllerPlugin {
-    fn build(&self, app: &mut AppBuilder) {
-
-	}
-}
-
-#[derive(Bundle)]
-pub struct ThirdPersonController {
-	pub camera: Camera3dComponents,
-}
-
-impl Default for ThirdPersonController {
-	fn default() -> Self {
-		Self {
-			camera: Camera3dComponents {
-                transform: Transform::from_translation_rotation(Vec3::new(0.0, 5.0, 6.0), Quat::from_rotation_x(-30.0 * std::f32::consts::PI / 180.0)),
-                ..Default::default()
-            },
-		}
-	}
-}
-
-impl ThirdPersonController {
-    pub fn build(&mut self, builder: &mut ChildBuilder) {
+    fn build(&self, builder: &mut AppBuilder) {
         builder
-            .spawn(Camera3dComponents {
-            transform: Transform::from_translation_rotation(Vec3::new(0.0, 5.0, 6.0), Quat::from_rotation_x(-30.0 * std::f32::consts::PI / 180.0)),
-            ..Default::default()
-        });
+            .add_startup_system(setup.system())
+            .add_system(player_movement_system.system());
     }
 }
 
-pub struct Player {
+fn setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    commands
+        .spawn(PbrComponents {
+            mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
+            material: materials.add(Color::rgb(0.5, 0.4, 0.3).into()),
+            transform: Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
+            ..Default::default()
+        })
+        .with(PlayerController::default())
+        .with(GlobalTransform::from_translation(Vec3::new(0.0, 0.0, 0.0)))
+        .with_children(|parent| {
+            parent.spawn(Camera3dComponents {
+                transform: Transform::from_translation_rotation(
+                    Vec3::new(0.0, 5.0, 6.0),
+                    Quat::from_rotation_x(-30.0 * std::f32::consts::PI / 180.0),
+                ),
+                ..Default::default()
+            });
+        });
+}
+
+#[derive(Bundle)]
+struct PlayerController {
     speed: f32,
+    yaw: f32,
+    rotation_speed: f32,
 }
 
-impl Default for Player {
-	fn default() -> Self {
-		Self {
-			speed: 10.0,
-		}
-	}
+impl Default for PlayerController {
+    fn default() -> Self {
+        Self {
+            speed: 10.0,
+            yaw: 0.0,
+            rotation_speed: 0.1,
+        }
+    }
 }
 
-pub fn player_movement_system(
+fn forward_vector(rotation: &Quat) -> Vec3 {
+    rotation.mul_vec3(Vec3::unit_z()).normalize()
+}
+
+fn forward_walk_vector(rotation: &Quat) -> Vec3 {
+    let f = forward_vector(rotation);
+    let f_flattened = Vec3::new(f.x(), 0.0, f.z()).normalize();
+    f_flattened
+}
+
+fn strafe_vector(rotation: &Quat) -> Vec3 {
+    // Rotate it 90 degrees to get the strafe direction
+    Quat::from_rotation_y(90.0f32.to_radians())
+        .mul_vec3(forward_walk_vector(rotation))
+        .normalize()
+}
+
+fn player_movement_system(
     time: Res<Time>,
     mut state: ResMut<super::InputState>,
     keyboard_input: Res<Input<KeyCode>>,
-	mouse_motion_events: Res<Events<MouseMotion>>,
-    mut query: Query<(&Player, &mut Transform, &mut GlobalTransform)>,
+    mouse_motion_events: Res<Events<MouseMotion>>,
+    mut query: Query<(&mut PlayerController, &mut Transform, &mut GlobalTransform)>,
 ) {
     let mut delta: Vec2 = Vec2::zero();
-	for event in state.motion.iter(&mouse_motion_events) {
-		delta += event.delta;
-	}
+    for event in state.motion.iter(&mouse_motion_events) {
+        delta += event.delta;
+    }
 
-    for (player, mut transform, mut g_transform) in &mut query.iter() {
-        
+    for (mut player_controller, mut transform, mut _g_transform) in &mut query.iter() {
+        player_controller.yaw -= delta.x() * time.delta_seconds * player_controller.rotation_speed;
+
+        let mut axis_h = 0.0;
+        let mut axis_v = 0.0;
+
         if keyboard_input.pressed(KeyCode::W) {
-            transform.translate(Vec3::new(0.0, 0.0, -player.speed * time.delta_seconds));
+            axis_v -= 1.0;
         }
-        
+
         if keyboard_input.pressed(KeyCode::S) {
-            transform.translate(Vec3::new(0.0, 0.0, player.speed * time.delta_seconds));
+            axis_v += 1.0;
         }
-        
+
         if keyboard_input.pressed(KeyCode::A) {
-            transform.translate(Vec3::new(-player.speed * time.delta_seconds, 0.0, 0.0));
+            axis_h -= 1.0;
         }
-        
+
         if keyboard_input.pressed(KeyCode::D) {
-            transform.translate(Vec3::new(player.speed * time.delta_seconds, 0.0, 0.0));
+            axis_h += 1.0;
         }
-        transform.rotate(Quat::from_rotation_y(delta.x() * time.delta_seconds));
+
+        let delta_forward = forward_walk_vector(&transform.rotation())
+            * axis_v
+            * player_controller.speed
+            * time.delta_seconds;
+
+        let delta_strafe = strafe_vector(&transform.rotation())
+            * axis_h
+            * player_controller.speed
+            * time.delta_seconds;
+
+        transform.translate(delta_forward + delta_strafe);
+        transform.set_rotation(Quat::from_rotation_y(player_controller.yaw));
     }
 }
