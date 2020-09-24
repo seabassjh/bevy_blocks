@@ -3,6 +3,8 @@ use winit::dpi::LogicalPosition;
 
 mod third_person_controller;
 
+use third_person_controller::{Player, ThirdPersonController};
+
 fn main() {
     App::build()
         .add_resource(Msaa { samples: 4 })
@@ -35,14 +37,8 @@ fn setup(
             transform: Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
             ..Default::default()
         })
-        .with(Player { speed: 10.0 })
-        .with_children(|parent| {
-            parent
-                .spawn(Camera3dComponents {
-                    transform: Transform::from_translation_rotation(Vec3::new(0.0, 5.0, 6.0), Quat::from_rotation_x(-30.0 * std::f32::consts::PI / 180.0)),
-                    ..Default::default()
-                });
-        })
+        .with(Player::default())
+        .with(GlobalTransform::from_translation(Vec3::new(0.0,0.0,0.0)))
         // sphere
         .spawn(PbrComponents {
             mesh: meshes.add(Mesh::from(shape::Icosphere {
@@ -57,12 +53,16 @@ fn setup(
         .spawn(LightComponents {
             transform: Transform::from_translation(Vec3::new(4.0, 8.0, 4.0)),
             ..Default::default()
+        })
+        .spawn(Camera3dComponents {
+            transform: Transform::from_translation_rotation(Vec3::new(0.0, 5.0, 6.0), Quat::from_rotation_x(-30.0 * std::f32::consts::PI / 180.0)),
+            ..Default::default()
         });
     //commands.spawn(FlyCamera::default());
 }
 
 #[derive(Default)]
-struct InputState {
+pub struct InputState {
     keys: EventReader<KeyboardInput>,
     _cursor: EventReader<CursorMoved>,
     motion: EventReader<MouseMotion>,
