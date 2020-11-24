@@ -1,4 +1,4 @@
-use bevy::{input::keyboard::*, input::mouse::*, prelude::*};
+use bevy::{prelude::*};
 
 mod third_person_controller;
 
@@ -9,8 +9,6 @@ fn main() {
         .add_resource(Msaa { samples: 4 })
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup.system())
-        .init_resource::<InputState>()
-        .add_system(input_handling.system())
         .add_plugin(ThirdPersonControllerPlugin)
         .run();
 }
@@ -44,25 +42,4 @@ fn setup(
             transform: Transform::from_translation(Vec3::new(4.0, 8.0, 4.0)),
             ..Default::default()
         });
-}
-
-#[derive(Default)]
-pub struct InputState {
-    _keys: EventReader<KeyboardInput>,
-    _cursor: EventReader<CursorMoved>,
-    motion: EventReader<MouseMotion>,
-    _mousebtn: EventReader<MouseButtonInput>,
-    _scroll: EventReader<MouseWheel>,
-}
-
-fn input_handling(
-    _windows: ResMut<Windows>,
-    _winit: ResMut<bevy::winit::WinitWindows>,
-    mut _state: ResMut<InputState>,
-    _ev_keys: Res<Events<KeyboardInput>>,
-    _ev_cursor: Res<Events<CursorMoved>>,
-    _ev_motion: Res<Events<MouseMotion>>,
-    _ev_mousebtn: Res<Events<MouseButtonInput>>,
-    _ev_scroll: Res<Events<MouseWheel>>,
-) {
 }

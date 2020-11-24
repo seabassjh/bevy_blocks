@@ -7,8 +7,14 @@ impl Plugin for ThirdPersonControllerPlugin {
     fn build(&self, builder: &mut AppBuilder) {
         builder
             .add_startup_system(setup.system())
+            .init_resource::<InputState>()
             .add_system(player_movement_system.system());
     }
+}
+
+#[derive(Default)]
+pub struct InputState {
+    motion: EventReader<MouseMotion>,
 }
 
 fn setup(
@@ -73,7 +79,7 @@ fn strafe_vector(rotation: &Quat) -> Vec3 {
 
 fn player_movement_system(
     time: Res<Time>,
-    mut state: ResMut<super::InputState>,
+    mut state: ResMut<InputState>,
     keyboard_input: Res<Input<KeyCode>>,
     mouse_motion_events: Res<Events<MouseMotion>>,
     mut query: Query<(&mut PlayerController, &mut Transform, &mut GlobalTransform)>,
