@@ -1,15 +1,26 @@
-use bevy::{prelude::*};
+mod mesh_generator;
 
+use bevy::prelude::*;
 mod third_person_controller;
-
+use mesh_generator::{mesh_generator_system, MeshGeneratorState, MeshMaterial};
 use third_person_controller::ThirdPersonControllerPlugin;
 
 fn main() {
     App::build()
+        .add_resource(WindowDescriptor {
+            title: "My Bevy Game".to_string(),
+            width: 1920,
+            height: 1080,
+            vsync: true,
+            resizable: false,
+            ..Default::default()
+        })
         .add_resource(Msaa { samples: 4 })
+        .add_resource(ClearColor(Color::rgb(0.4, 0.8, 1.0)))
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup.system())
         .add_plugin(ThirdPersonControllerPlugin)
+        .add_system(mesh_generator_system.system())
         .run();
 }
 
@@ -21,12 +32,6 @@ fn setup(
 ) {
     // add entities to the world
     commands
-        // plane
-        .spawn(PbrComponents {
-            mesh: meshes.add(Mesh::from(shape::Plane { size: 10.0 })),
-            material: materials.add(Color::rgb(0.1, 0.2, 0.1).into()),
-            ..Default::default()
-        })
         // sphere
         .spawn(PbrComponents {
             mesh: meshes.add(Mesh::from(shape::Icosphere {
@@ -42,4 +47,10 @@ fn setup(
             transform: Transform::from_translation(Vec3::new(4.0, 8.0, 4.0)),
             ..Default::default()
         });
+
+    commands.insert_resource(MeshMaterial(
+        materials.add(Color::rgb(0.1, 0.2, 0.1).into()),
+    ));
+
+    commands.insert_resource(MeshGeneratorState::new());
 }
