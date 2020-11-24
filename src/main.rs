@@ -7,7 +7,7 @@ use third_person_controller::ThirdPersonControllerPlugin;
 fn main() {
     App::build()
         .add_resource(Msaa { samples: 4 })
-        .add_default_plugins()
+        .add_plugins(DefaultPlugins)
         .add_startup_system(setup.system())
         .init_resource::<InputState>()
         .add_system(input_handling.system())

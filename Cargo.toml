@@ -7,5 +7,5 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = "0.2.1" # make sure this is the latest version
+bevy = "0.3.0" # make sure this is the latest version
 winit = { version = "0.22.2", package = "cart-tmp-winit", default-features = false }

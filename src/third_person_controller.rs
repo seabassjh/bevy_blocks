@@ -27,10 +27,11 @@ fn setup(
         .with(GlobalTransform::from_translation(Vec3::new(0.0, 0.0, 0.0)))
         .with_children(|parent| {
             parent.spawn(Camera3dComponents {
-                transform: Transform::from_translation_rotation(
-                    Vec3::new(0.0, 5.0, 6.0),
-                    Quat::from_rotation_x(-30.0 * std::f32::consts::PI / 180.0),
-                ),
+                transform: Transform {
+                    translation: Vec3::new(0.0, 5.0, 6.0),
+                    rotation: Quat::from_rotation_x(-30.0 * std::f32::consts::PI / 180.0),
+                    scale: Vec3::one(),
+                },
                 ..Default::default()
             });
         });
@@ -82,7 +83,7 @@ fn player_movement_system(
         delta += event.delta;
     }
 
-    for (mut player_controller, mut transform, mut _g_transform) in &mut query.iter() {
+    for (mut player_controller, mut transform, mut _g_transform) in &mut query.iter_mut() {
         player_controller.yaw -= delta.x() * time.delta_seconds * player_controller.rotation_speed;
 
         let mut axis_h = 0.0;
@@ -104,17 +105,17 @@ fn player_movement_system(
             axis_h += 1.0;
         }
 
-        let delta_forward = forward_walk_vector(&transform.rotation())
+        let delta_forward = forward_walk_vector(&transform.rotation)
             * axis_v
             * player_controller.speed
             * time.delta_seconds;
 
-        let delta_strafe = strafe_vector(&transform.rotation())
+        let delta_strafe = strafe_vector(&transform.rotation)
             * axis_h
             * player_controller.speed
             * time.delta_seconds;
 
-        transform.translate(delta_forward + delta_strafe);
-        transform.set_rotation(Quat::from_rotation_y(player_controller.yaw));
+        transform.translation += delta_forward + delta_strafe;
+        transform.rotation = Quat::from_rotation_y(player_controller.yaw);
     }
 }
