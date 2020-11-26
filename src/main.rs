@@ -1,7 +1,7 @@
 mod mesh_generator;
-
-use bevy::prelude::*;
 mod third_person_controller;
+
+use bevy::{math::vec4, prelude::*};
 use mesh_generator::{mesh_generator_system, MeshGeneratorState, MeshMaterial};
 use third_person_controller::ThirdPersonControllerPlugin;
 
@@ -39,12 +39,12 @@ fn setup(
                 radius: 0.5,
             })),
             material: materials.add(Color::rgb(0.1, 0.4, 0.8).into()),
-            transform: Transform::from_translation(Vec3::new(1.5, 1.5, 1.5)),
+            transform: Transform::from_translation(Vec3::zero()),
             ..Default::default()
         })
         // light
         .spawn(LightComponents {
-            transform: Transform::from_translation(Vec3::new(4.0, 8.0, 4.0)),
+            transform: Transform::from_translation(Vec3::new(0.0, 50.0, 0.0)),
             ..Default::default()
         });
 

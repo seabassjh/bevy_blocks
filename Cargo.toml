@@ -9,3 +9,5 @@ edition = "2018"
 [dependencies]
 bevy = "0.3.0" # make sure this is the latest version
 building-blocks = "0.2.1"
+noise = "0.6.0"
+rand = "0.7.3"

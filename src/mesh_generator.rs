@@ -1,6 +1,8 @@
 use building_blocks::core::prelude::*;
 use building_blocks::mesh::*;
 use building_blocks::storage::{prelude::*, IsEmpty};
+use noise::{MultiFractal, NoiseFn, RidgedMulti, Seedable};
+use rand::Rng;
 
 use bevy::{
     prelude::*,
@@ -28,19 +30,33 @@ enum Cubic {
     Terrace,
 }
 
+const SEA_LEVEL: f64 = 10.0;
+const TERRAIN_Y_SCALE: f64 = 0.2;
+
 impl Cubic {
     fn get_voxels(&self) -> Array3<CubeVoxel> {
         match self {
             Cubic::Terrace => {
+                let mut rng = rand::thread_rng();
+                let rand_seed: u32 = rng.gen();
+                let noise = RidgedMulti::new()
+                    .set_seed(rand_seed)
+                    .set_frequency(0.008)
+                    .set_octaves(5);
+                let yoffset = SEA_LEVEL;
+                let yscale = TERRAIN_Y_SCALE * yoffset;
+
                 let extent =
                     Extent3i::from_min_and_shape(PointN([-20; 3]), PointN([40; 3])).padded(1);
                 let mut voxels = Array3::fill(extent, CubeVoxel(false));
-                for i in 0..40 {
-                    let level = Extent3i::from_min_and_shape(
-                        PointN([i - 20; 3]),
-                        PointN([40 - i, 1, 40 - i]),
-                    );
-                    voxels.fill_extent(&level, CubeVoxel(true));
+                for z in 0..40 {
+                    for x in 0..40 {
+                        let max_y =
+                            (noise.get([x as f64, z as f64]) * yscale + yoffset).round() as i32;
+                        let level =
+                            Extent3i::from_min_and_shape(PointN([x, 0, z]), PointN([1, max_y, 1]));
+                        voxels.fill_extent(&level, CubeVoxel(true));
+                    }
                 }
 
                 voxels
@@ -71,10 +87,11 @@ pub struct MeshMaterial(pub Handle<StandardMaterial>);
 
 pub fn mesh_generator_system(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     pool: Res<ComputeTaskPool>,
     mut state: ResMut<MeshGeneratorState>,
     mut meshes: ResMut<Assets<Mesh>>,
-    material: Res<MeshMaterial>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let new_shape_requested = false;
 
@@ -83,6 +100,13 @@ pub fn mesh_generator_system(
         for entity in state.chunk_mesh_entities.drain(..) {
             commands.despawn(entity);
         }
+
+        let texture_handle = asset_server.load("../assets/textures/0.png");
+        let material_handle = materials.add(StandardMaterial {
+            albedo_texture: Some(texture_handle.clone()),
+            shaded: true,
+            ..Default::default()
+        });
 
         // Sample the new shape.
         let chunk_meshes = generate_chunk_meshes_from_cubic(Cubic::Terrace, &pool.0);
@@ -96,7 +120,7 @@ pub fn mesh_generator_system(
                 state.chunk_mesh_entities.push(create_mesh_entity(
                     mesh,
                     &mut commands,
-                    material.0.clone(),
+                    material_handle.clone(),
                     &mut meshes,
                 ));
             }
@@ -106,7 +130,7 @@ pub fn mesh_generator_system(
 
 const CHUNK_SIZE: i32 = 16;
 
-fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option<PosNormMesh>> {
+fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option<PosNormTexMesh>> {
     let voxels = cubic.get_voxels();
 
     // Chunk up the voxels just to show that meshing across chunks is consistent.
@@ -143,10 +167,10 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
                 let mut buffer = GreedyQuadsBuffer::new(padded_chunk_extent);
                 greedy_quads(&padded_chunk, &padded_chunk_extent, &mut buffer);
 
-                let mut mesh = PosNormMesh::default();
+                let mut mesh = PosNormTexMesh::default();
                 for group in buffer.quad_groups.iter() {
                     for (quad, _material) in group.quads.iter() {
-                        group.meta.add_quad_to_pos_norm_mesh(&quad, &mut mesh);
+                        group.meta.add_quad_to_pos_norm_tex_mesh(&quad, &mut mesh);
                     }
                 }
 
@@ -161,13 +185,14 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
 }
 
 fn create_mesh_entity(
-    mesh: PosNormMesh,
+    mesh: PosNormTexMesh,
     commands: &mut Commands,
     material: Handle<StandardMaterial>,
     meshes: &mut Assets<Mesh>,
 ) -> Entity {
     assert_eq!(mesh.positions.len(), mesh.normals.len());
-    let num_vertices = mesh.positions.len();
+
+    let _num_vertices = mesh.positions.len();
 
     let mut render_mesh = Mesh::new(PrimitiveTopology::TriangleList);
     render_mesh.set_attribute(
@@ -177,7 +202,7 @@ fn create_mesh_entity(
     render_mesh.set_attribute("Vertex_Normal", VertexAttributeValues::Float3(mesh.normals));
     render_mesh.set_attribute(
         "Vertex_UV",
-        VertexAttributeValues::Float2(vec![[0.0; 2]; num_vertices]),
+        VertexAttributeValues::Float2(mesh.tex_coords),
     );
     render_mesh.set_indices(Some(Indices::U32(
         mesh.indices.iter().map(|i| *i as u32).collect(),

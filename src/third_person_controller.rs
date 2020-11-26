@@ -138,10 +138,7 @@ fn player_movement_system(
                 * player_controller.speed
                 * time.delta_seconds;
 
-            let delta_up = Vec3::unit_y()
-                * axis_y
-                * player_controller.speed
-                * time.delta_seconds;
+            let delta_up = Vec3::unit_y() * axis_y * player_controller.speed * time.delta_seconds;
 
             let delta_strafe = strafe_vector(&transform.rotation)
                 * axis_h
