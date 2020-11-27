@@ -22,7 +22,7 @@ fn setup(mut commands: Commands, mut windows: ResMut<Windows>) {
     commands
         .spawn(Camera3dComponents {
             transform: Transform {
-                translation: Vec3::new(0.0, 5.0, 6.0),
+                translation: Vec3::new(6.0, 20.0, 6.0),
                 rotation: Quat::from_rotation_x(-30.0 * std::f32::consts::PI / 180.0),
                 scale: Vec3::one(),
             },

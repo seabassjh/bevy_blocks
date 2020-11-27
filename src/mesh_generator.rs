@@ -1,4 +1,4 @@
-use building_blocks::core::prelude::*;
+corrcorruse building_blocks::core::prelude::*;
 use building_blocks::mesh::*;
 use building_blocks::storage::{prelude::*, IsEmpty};
 use noise::{MultiFractal, NoiseFn, RidgedMulti, Seedable};
@@ -9,6 +9,7 @@ use bevy::{
     render::{
         mesh::{Indices, VertexAttributeValues},
         pipeline::PrimitiveTopology,
+        texture::AddressMode,
     },
     tasks::{ComputeTaskPool, TaskPool},
 };
@@ -24,6 +25,8 @@ impl MeshGeneratorState {
         }
     }
 }
+
+pub struct LoadingTexture(Option<Handle<Texture>>);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Cubic {
@@ -85,9 +88,17 @@ impl IsEmpty for CubeVoxel {
 #[derive(Default)]
 pub struct MeshMaterial(pub Handle<StandardMaterial>);
 
+pub fn setup_mesh_generator_system(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // Start loading the texture.
+    commands.insert_resource(LoadingTexture(Some(
+        asset_server.load("../assets/textures/stone.png"),
+    )));
+}
+
 pub fn mesh_generator_system(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
+    mut loading_texture: ResMut<LoadingTexture>,
+    mut textures: ResMut<Assets<Texture>>,
     pool: Res<ComputeTaskPool>,
     mut state: ResMut<MeshGeneratorState>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -101,7 +112,21 @@ pub fn mesh_generator_system(
             commands.despawn(entity);
         }
 
-        let texture_handle = asset_server.load("../assets/textures/0.png");
+        let (texture_handle, texture) = match loading_texture.0.as_ref() {
+            Some(handle) => {
+                if let Some(texture) = textures.get_mut(handle) {
+                    (loading_texture.0.take().unwrap(), texture)
+                } else {
+                    return;
+                }
+            }
+            None => return,
+        };
+
+        texture.sampler.address_mode_u = AddressMode::Repeat;
+        texture.sampler.address_mode_v = AddressMode::Repeat;
+        texture.sampler.address_mode_w = AddressMode::Repeat;
+
         let material_handle = materials.add(StandardMaterial {
             albedo_texture: Some(texture_handle.clone()),
             shaded: true,
@@ -201,7 +226,7 @@ fn create_mesh_entity(
     );
     render_mesh.set_attribute("Vertex_Normal", VertexAttributeValues::Float3(mesh.normals));
     render_mesh.set_attribute(
-        "Vertex_UV",
+        Mesh::ATTRIBUTE_UV_0,
         VertexAttributeValues::Float2(mesh.tex_coords),
     );
     render_mesh.set_indices(Some(Indices::U32(
