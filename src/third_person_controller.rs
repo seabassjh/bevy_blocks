@@ -18,9 +18,9 @@ pub struct InputState {
     motion: EventReader<MouseMotion>,
 }
 
-fn setup(mut commands: Commands, mut windows: ResMut<Windows>) {
+fn setup(commands: &mut Commands, mut windows: ResMut<Windows>) {
     commands
-        .spawn(Camera3dComponents {
+        .spawn(Camera3dBundle {
             transform: Transform {
                 translation: Vec3::new(6.0, 20.0, 6.0),
                 rotation: Quat::from_rotation_x(-30.0 * std::f32::consts::PI / 180.0),

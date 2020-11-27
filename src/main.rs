@@ -1,11 +1,10 @@
 mod third_person_controller;
 mod voxel_generator;
-mod voxel_texturing;
 
 use bevy::{math::vec4, prelude::*};
 use third_person_controller::ThirdPersonControllerPlugin;
 use voxel_generator::{
-    setup_voxel_generator_system, voxel_generator_system, MeshGeneratorState, MeshMaterial,
+    setup_voxel_generator_system, voxel_generator_system, MeshGeneratorState, MeshMaterial, MyMaterial
 };
 
 fn main() {
@@ -21,23 +20,24 @@ fn main() {
         .add_resource(Msaa { samples: 4 })
         .add_resource(ClearColor(Color::rgb(0.4, 0.8, 1.0)))
         .add_plugins(DefaultPlugins)
+        .add_asset::<MyMaterial>()
         .add_startup_system(setup.system())
         .add_startup_system(setup_voxel_generator_system.system())
         .add_plugin(ThirdPersonControllerPlugin)
         .add_system(voxel_generator_system.system())
         .run();
-}
+    }
 
 /// set up a simple 3D scene
 fn setup(
-    mut commands: Commands,
+    commands: &mut Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // add entities to the world
     commands
         // sphere
-        .spawn(PbrComponents {
+        .spawn(PbrBundle {
             mesh: meshes.add(Mesh::from(shape::Icosphere {
                 subdivisions: 4,
                 radius: 0.5,
@@ -47,7 +47,7 @@ fn setup(
             ..Default::default()
         })
         // light
-        .spawn(LightComponents {
+        .spawn(LightBundle {
             transform: Transform::from_translation(Vec3::new(0.0, 50.0, 0.0)),
             ..Default::default()
         });

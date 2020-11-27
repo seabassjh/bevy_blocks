@@ -1,4 +1,4 @@
-use super::voxel_texturing::{FRAGMENT_SHADER, VERTEX_SHADER};
+//use super::voxel_texturing::{FRAGMENT_SHADER, VERTEX_SHADER};
 use building_blocks::core::prelude::*;
 use building_blocks::mesh::*;
 use building_blocks::storage::{prelude::*, IsEmpty};
@@ -12,10 +12,11 @@ use bevy::{
         pipeline::{PipelineDescriptor, PrimitiveTopology, RenderPipeline},
         render_graph::{base, AssetRenderResourcesNode, RenderGraph},
         renderer::RenderResources,
-        shader::{ShaderStage, ShaderStages},
+        shader::{asset_shader_defs_system, ShaderDefs, ShaderStage, ShaderStages},
         texture::AddressMode,
     },
     tasks::{ComputeTaskPool, TaskPool},
+    type_registry::TypeUuid,
 };
 
 pub struct MeshGeneratorState {
@@ -30,9 +31,10 @@ impl MeshGeneratorState {
     }
 }
 
-pub struct VoxelAssets {
+pub struct VoxelRenderHandles {
     loading_texture: Option<Handle<Texture>>,
-    material: Option<Handle<StandardMaterial>>,
+    material: Option<Handle<MyMaterial>>,
+    pipeline: Handle<PipelineDescriptor>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,8 +80,6 @@ impl Cubic {
 #[derive(Clone, Copy)]
 struct CubeVoxel(bool);
 
-struct VoxelPipeline(Handle<PipelineDescriptor>);
-
 impl MaterialVoxel for CubeVoxel {
     type Material = u8;
 
@@ -97,35 +97,72 @@ impl IsEmpty for CubeVoxel {
 #[derive(Default)]
 pub struct MeshMaterial(pub Handle<StandardMaterial>);
 
+#[derive(RenderResources, ShaderDefs, Default, TypeUuid)]
+#[uuid = "620f651b-adbe-464b-b740-ba0e547282ba"]
+pub struct MyMaterial {
+    pub albedo: Color,
+    pub albedo_texture: Option<Handle<Texture>>,
+    #[render_resources(ignore)]
+    pub shaded: bool,
+}
+
+const FRAGMENT_SHADER: &str = include_str!("../assets/shaders/voxel.frag");
+const VERTEX_SHADER: &str = include_str!("../assets/shaders/voxel.vert");
+
 pub fn setup_voxel_generator_system(
-    mut commands: Commands,
+    commands: &mut Commands,
     asset_server: Res<AssetServer>,
     mut pipelines: ResMut<Assets<PipelineDescriptor>>,
     mut shaders: ResMut<Assets<Shader>>,
+    mut materials: ResMut<Assets<MyMaterial>>,
     mut render_graph: ResMut<RenderGraph>,
 ) {
-    // Start loading the texture.
-    commands.insert_resource(VoxelAssets {
-        loading_texture: Some(asset_server.load("../assets/textures/stone.png")),
-        material: None,
-    });
-
-    // Create a new shader pipeline.
+    // Create a new shader pipeline
     let pipeline_handle = pipelines.add(PipelineDescriptor::default_config(ShaderStages {
         vertex: shaders.add(Shader::from_glsl(ShaderStage::Vertex, VERTEX_SHADER)),
         fragment: Some(shaders.add(Shader::from_glsl(ShaderStage::Fragment, FRAGMENT_SHADER))),
     }));
-    commands.insert_resource(VoxelPipeline(pipeline_handle));
+
+    // Add an AssetRenderResourcesNode to our Render Graph. This will bind MyMaterial resources to our shader
+    render_graph.add_system_node(
+        "my_material",
+        AssetRenderResourcesNode::<MyMaterial>::new(true),
+    );
+
+    // Add a Render Graph edge connecting our new "my_material" node to the main pass node. This ensures "my_material" runs before the main pass
+    render_graph
+        .add_node_edge("my_material", base::node::MAIN_PASS)
+        .unwrap();
+    
+
+    let texture_handle = asset_server.load("../assets/textures/stone.png");
+    // Create a new material
+    let material_handle = materials.add(MyMaterial {
+        albedo: Color::rgb(1.0, 1.0, 1.0),
+        albedo_texture: Some(texture_handle.clone()),
+        shaded: true,
+    });
+    // // Create a new material
+    // let material_handle = materials.add(MyMaterial {
+    //     color: Color::rgb(0.0, 0.8, 0.0),
+    // });
+    // Start loading the texture.
+    commands.insert_resource(VoxelRenderHandles {
+        loading_texture: Some(texture_handle.clone()),
+        material: Some(material_handle.clone()),
+        pipeline: pipeline_handle,
+    });
 }
 
 pub fn voxel_generator_system(
-    mut commands: Commands,
-    mut assets: ResMut<VoxelAssets>,
+    commands: &mut Commands,
+    mut assets: ResMut<VoxelRenderHandles>,
     mut textures: ResMut<Assets<Texture>>,
     pool: Res<ComputeTaskPool>,
     mut state: ResMut<MeshGeneratorState>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut my_materials: ResMut<Assets<MyMaterial>>,
 ) {
     let new_shape_requested = false;
 
@@ -150,6 +187,17 @@ pub fn voxel_generator_system(
         texture.sampler.address_mode_v = AddressMode::Repeat;
         texture.sampler.address_mode_w = AddressMode::Repeat;
 
+        let (my_material_handle, _material) = match assets.material.as_ref() {
+            Some(handle) => {
+                if let Some(material) = my_materials.get_mut(handle) {
+                    (assets.material.take().unwrap(), material)
+                } else {
+                    return;
+                }
+            }
+            None => return,
+        };
+
         let material_handle = materials.add(StandardMaterial {
             albedo_texture: Some(texture_handle.clone()),
             shaded: true,
@@ -159,6 +207,10 @@ pub fn voxel_generator_system(
         // Sample the new shape.
         let chunk_meshes = generate_chunk_meshes_from_cubic(Cubic::Terrace, &pool.0);
 
+        let render_pipelines = RenderPipelines::from_pipelines(vec![RenderPipeline::new(
+            assets.pipeline.clone(),
+        )]);
+
         for mesh in chunk_meshes.into_iter() {
             if let Some(mesh) = mesh {
                 if mesh.indices.is_empty() {
@@ -167,14 +219,60 @@ pub fn voxel_generator_system(
 
                 state.chunk_mesh_entities.push(create_mesh_entity(
                     mesh,
-                    &mut commands,
+                    commands,
                     material_handle.clone(),
+                    my_material_handle.clone(),
+                    render_pipelines.clone(),
                     &mut meshes,
                 ));
             }
         }
     }
 }
+
+fn create_mesh_entity(
+    mesh: PosNormTexMesh,
+    commands: &mut Commands,
+    material: Handle<StandardMaterial>,
+    my_material: Handle<MyMaterial>,
+    pipelines: RenderPipelines,
+    meshes: &mut Assets<Mesh>,
+) -> Entity {
+    assert_eq!(mesh.positions.len(), mesh.normals.len());
+
+    let _num_vertices = mesh.positions.len();
+
+    let mut render_mesh = Mesh::new(PrimitiveTopology::TriangleList);
+    render_mesh.set_attribute(
+        "Vertex_Position",
+        VertexAttributeValues::Float3(mesh.positions),
+    );
+    render_mesh.set_attribute("Vertex_Normal", VertexAttributeValues::Float3(mesh.normals));
+    render_mesh.set_attribute(
+        Mesh::ATTRIBUTE_UV_0,
+        VertexAttributeValues::Float2(mesh.tex_coords),
+    );
+    render_mesh.set_indices(Some(Indices::U32(
+        mesh.indices.iter().map(|i| *i as u32).collect(),
+    )));
+
+    commands
+        // .spawn(PbrComponents {
+        //     mesh: meshes.add(render_mesh),
+        //     material,
+        //     ..Default::default()
+        // })
+        .spawn(MeshBundle {
+            mesh: meshes.add(render_mesh),
+            render_pipelines: pipelines,
+            transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+            ..Default::default()
+        })
+        .with(my_material)
+        .current_entity()
+        .unwrap()
+}
+
 
 const CHUNK_SIZE: i32 = 16;
 
@@ -230,38 +328,4 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
             })
         }
     })
-}
-
-fn create_mesh_entity(
-    mesh: PosNormTexMesh,
-    commands: &mut Commands,
-    material: Handle<StandardMaterial>,
-    meshes: &mut Assets<Mesh>,
-) -> Entity {
-    assert_eq!(mesh.positions.len(), mesh.normals.len());
-
-    let _num_vertices = mesh.positions.len();
-
-    let mut render_mesh = Mesh::new(PrimitiveTopology::TriangleList);
-    render_mesh.set_attribute(
-        "Vertex_Position",
-        VertexAttributeValues::Float3(mesh.positions),
-    );
-    render_mesh.set_attribute("Vertex_Normal", VertexAttributeValues::Float3(mesh.normals));
-    render_mesh.set_attribute(
-        Mesh::ATTRIBUTE_UV_0,
-        VertexAttributeValues::Float2(mesh.tex_coords),
-    );
-    render_mesh.set_indices(Some(Indices::U32(
-        mesh.indices.iter().map(|i| *i as u32).collect(),
-    )));
-
-    commands
-        .spawn(PbrComponents {
-            mesh: meshes.add(render_mesh),
-            material,
-            ..Default::default()
-        })
-        .current_entity()
-        .unwrap()
 }
