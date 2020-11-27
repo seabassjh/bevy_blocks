@@ -1,9 +1,12 @@
-mod mesh_generator;
 mod third_person_controller;
+mod voxel_generator;
+mod voxel_texturing;
 
 use bevy::{math::vec4, prelude::*};
-use mesh_generator::{mesh_generator_system, setup_mesh_generator_system, MeshGeneratorState, MeshMaterial};
 use third_person_controller::ThirdPersonControllerPlugin;
+use voxel_generator::{
+    setup_voxel_generator_system, voxel_generator_system, MeshGeneratorState, MeshMaterial,
+};
 
 fn main() {
     App::build()
@@ -19,9 +22,9 @@ fn main() {
         .add_resource(ClearColor(Color::rgb(0.4, 0.8, 1.0)))
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup.system())
-        .add_startup_system(setup_mesh_generator_system.system())
+        .add_startup_system(setup_voxel_generator_system.system())
         .add_plugin(ThirdPersonControllerPlugin)
-        .add_system(mesh_generator_system.system())
+        .add_system(voxel_generator_system.system())
         .run();
 }
 

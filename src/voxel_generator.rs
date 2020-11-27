@@ -1,3 +1,4 @@
+use super::voxel_texturing::{FRAGMENT_SHADER, VERTEX_SHADER};
 use building_blocks::core::prelude::*;
 use building_blocks::mesh::*;
 use building_blocks::storage::{prelude::*, IsEmpty};
@@ -8,7 +9,10 @@ use bevy::{
     prelude::*,
     render::{
         mesh::{Indices, VertexAttributeValues},
-        pipeline::PrimitiveTopology,
+        pipeline::{PipelineDescriptor, PrimitiveTopology, RenderPipeline},
+        render_graph::{base, AssetRenderResourcesNode, RenderGraph},
+        renderer::RenderResources,
+        shader::{ShaderStage, ShaderStages},
         texture::AddressMode,
     },
     tasks::{ComputeTaskPool, TaskPool},
@@ -26,7 +30,10 @@ impl MeshGeneratorState {
     }
 }
 
-pub struct LoadingTexture(Option<Handle<Texture>>);
+pub struct VoxelAssets {
+    loading_texture: Option<Handle<Texture>>,
+    material: Option<Handle<StandardMaterial>>,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Cubic {
@@ -71,6 +78,8 @@ impl Cubic {
 #[derive(Clone, Copy)]
 struct CubeVoxel(bool);
 
+struct VoxelPipeline(Handle<PipelineDescriptor>);
+
 impl MaterialVoxel for CubeVoxel {
     type Material = u8;
 
@@ -88,16 +97,30 @@ impl IsEmpty for CubeVoxel {
 #[derive(Default)]
 pub struct MeshMaterial(pub Handle<StandardMaterial>);
 
-pub fn setup_mesh_generator_system(mut commands: Commands, asset_server: Res<AssetServer>) {
+pub fn setup_voxel_generator_system(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut pipelines: ResMut<Assets<PipelineDescriptor>>,
+    mut shaders: ResMut<Assets<Shader>>,
+    mut render_graph: ResMut<RenderGraph>,
+) {
     // Start loading the texture.
-    commands.insert_resource(LoadingTexture(Some(
-        asset_server.load("../assets/textures/stone.png"),
-    )));
+    commands.insert_resource(VoxelAssets {
+        loading_texture: Some(asset_server.load("../assets/textures/stone.png")),
+        material: None,
+    });
+
+    // Create a new shader pipeline.
+    let pipeline_handle = pipelines.add(PipelineDescriptor::default_config(ShaderStages {
+        vertex: shaders.add(Shader::from_glsl(ShaderStage::Vertex, VERTEX_SHADER)),
+        fragment: Some(shaders.add(Shader::from_glsl(ShaderStage::Fragment, FRAGMENT_SHADER))),
+    }));
+    commands.insert_resource(VoxelPipeline(pipeline_handle));
 }
 
-pub fn mesh_generator_system(
+pub fn voxel_generator_system(
     mut commands: Commands,
-    mut loading_texture: ResMut<LoadingTexture>,
+    mut assets: ResMut<VoxelAssets>,
     mut textures: ResMut<Assets<Texture>>,
     pool: Res<ComputeTaskPool>,
     mut state: ResMut<MeshGeneratorState>,
@@ -112,10 +135,10 @@ pub fn mesh_generator_system(
             commands.despawn(entity);
         }
 
-        let (texture_handle, texture) = match loading_texture.0.as_ref() {
+        let (texture_handle, texture) = match assets.loading_texture.as_ref() {
             Some(handle) => {
                 if let Some(texture) = textures.get_mut(handle) {
-                    (loading_texture.0.take().unwrap(), texture)
+                    (assets.loading_texture.take().unwrap(), texture)
                 } else {
                     return;
                 }
