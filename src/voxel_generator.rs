@@ -46,7 +46,7 @@ const SEA_LEVEL: f64 = 10.0;
 const TERRAIN_Y_SCALE: f64 = 0.2;
 
 impl Cubic {
-    fn get_voxels(&self) -> Array3<CubeVoxel> {
+    fn get_voxels(&self) -> Array3<Voxel> {
         match self {
             Cubic::Terrace => {
                 let mut rng = rand::thread_rng();
@@ -60,14 +60,15 @@ impl Cubic {
 
                 let extent =
                     Extent3i::from_min_and_shape(PointN([-20; 3]), PointN([40; 3])).padded(1);
-                let mut voxels = Array3::fill(extent, CubeVoxel(false));
+                let mut voxels = Array3::fill(extent, Voxel(0));
                 for z in 0..40 {
                     for x in 0..40 {
                         let max_y =
                             (noise.get([x as f64, z as f64]) * yscale + yoffset).round() as i32;
                         let level =
                             Extent3i::from_min_and_shape(PointN([x, 0, z]), PointN([1, max_y, 1]));
-                        voxels.fill_extent(&level, CubeVoxel(true));
+                        let vox_material = rng.gen_range(1,5) as VoxelMaterial;
+                        voxels.fill_extent(&level, Voxel(vox_material));
                     }
                 }
 
@@ -77,20 +78,28 @@ impl Cubic {
     }
 }
 
-#[derive(Clone, Copy)]
-struct CubeVoxel(bool);
+type VoxelMaterial = u8;
 
-impl MaterialVoxel for CubeVoxel {
-    type Material = u8;
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Voxel(VoxelMaterial);
 
-    fn material(&self) -> Self::Material {
-        1 // only 1 material
+impl Default for Voxel {
+    fn default() -> Self {
+        Voxel(0)
     }
 }
 
-impl IsEmpty for CubeVoxel {
+impl IsEmpty for Voxel {
     fn is_empty(&self) -> bool {
-        !self.0
+        self.0 == 0
+    }
+}
+
+impl MaterialVoxel for Voxel {
+    type Material = VoxelMaterial;
+
+    fn material(&self) -> Self::Material {
+        self.0
     }
 }
 
@@ -102,6 +111,7 @@ pub struct MeshMaterial(pub Handle<StandardMaterial>);
 pub struct MyMaterial {
     pub albedo: Color,
     pub albedo_texture: Option<Handle<Texture>>,
+    pub tex_array_val: u32,
     #[render_resources(ignore)]
     pub shaded: bool,
 }
@@ -133,13 +143,13 @@ pub fn setup_voxel_generator_system(
     render_graph
         .add_node_edge("my_material", base::node::MAIN_PASS)
         .unwrap();
-    
 
-    let texture_handle = asset_server.load("../assets/textures/stone.png");
+    let texture_handle = asset_server.load("../assets/textures/terrain.png");
     // Create a new material
     let material_handle = materials.add(MyMaterial {
         albedo: Color::rgb(1.0, 1.0, 1.0),
         albedo_texture: Some(texture_handle.clone()),
+        tex_array_val: 0,
         shaded: true,
     });
     // // Create a new material
@@ -153,6 +163,8 @@ pub fn setup_voxel_generator_system(
         pipeline: pipeline_handle,
     });
 }
+
+const NUM_BLOCKS: u32 = 4;
 
 pub fn voxel_generator_system(
     commands: &mut Commands,
@@ -187,7 +199,11 @@ pub fn voxel_generator_system(
         texture.sampler.address_mode_v = AddressMode::Repeat;
         texture.sampler.address_mode_w = AddressMode::Repeat;
 
-        let (my_material_handle, _material) = match assets.material.as_ref() {
+        // Create a new array texture asset from the loaded texture.
+        let array_layers = NUM_BLOCKS + 1;
+        texture.reinterpret_stacked_2d_as_array(array_layers);
+
+        let (my_material_handle, material) = match assets.material.as_ref() {
             Some(handle) => {
                 if let Some(material) = my_materials.get_mut(handle) {
                     (assets.material.take().unwrap(), material)
@@ -198,22 +214,21 @@ pub fn voxel_generator_system(
             None => return,
         };
 
+
         let material_handle = materials.add(StandardMaterial {
             albedo_texture: Some(texture_handle.clone()),
             shaded: true,
             ..Default::default()
         });
 
+        let render_pipelines =
+            RenderPipelines::from_pipelines(vec![RenderPipeline::new(assets.pipeline.clone())]);
+
         // Sample the new shape.
         let chunk_meshes = generate_chunk_meshes_from_cubic(Cubic::Terrace, &pool.0);
-
-        let render_pipelines = RenderPipelines::from_pipelines(vec![RenderPipeline::new(
-            assets.pipeline.clone(),
-        )]);
-
         for mesh in chunk_meshes.into_iter() {
             if let Some(mesh) = mesh {
-                if mesh.indices.is_empty() {
+                if mesh.pos_norm_tex_mesh.is_empty() {
                     continue;
                 }
 
@@ -231,26 +246,35 @@ pub fn voxel_generator_system(
 }
 
 fn create_mesh_entity(
-    mesh: PosNormTexMesh,
+    mesh_data: ChunkMeshData,
     commands: &mut Commands,
     material: Handle<StandardMaterial>,
     my_material: Handle<MyMaterial>,
     pipelines: RenderPipelines,
     meshes: &mut Assets<Mesh>,
 ) -> Entity {
+    let mesh = mesh_data.pos_norm_tex_mesh;
+
     assert_eq!(mesh.positions.len(), mesh.normals.len());
 
     let _num_vertices = mesh.positions.len();
 
     let mut render_mesh = Mesh::new(PrimitiveTopology::TriangleList);
     render_mesh.set_attribute(
-        "Vertex_Position",
+        Mesh::ATTRIBUTE_POSITION,
         VertexAttributeValues::Float3(mesh.positions),
     );
-    render_mesh.set_attribute("Vertex_Normal", VertexAttributeValues::Float3(mesh.normals));
+    render_mesh.set_attribute(
+        Mesh::ATTRIBUTE_NORMAL,
+        VertexAttributeValues::Float3(mesh.normals),
+    );
     render_mesh.set_attribute(
         Mesh::ATTRIBUTE_UV_0,
         VertexAttributeValues::Float2(mesh.tex_coords),
+    );
+    render_mesh.set_attribute(
+        "Vertex_Color",
+        VertexAttributeValues::Float(mesh_data.vert_tex_arr_vals),
     );
     render_mesh.set_indices(Some(Indices::U32(
         mesh.indices.iter().map(|i| *i as u32).collect(),
@@ -273,15 +297,19 @@ fn create_mesh_entity(
         .unwrap()
 }
 
+struct ChunkMeshData {
+    pos_norm_tex_mesh: PosNormTexMesh,
+    vert_tex_arr_vals: Vec<f32>,
+}
 
 const CHUNK_SIZE: i32 = 16;
 
-fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option<PosNormTexMesh>> {
+fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option<ChunkMeshData>> {
     let voxels = cubic.get_voxels();
 
     // Chunk up the voxels just to show that meshing across chunks is consistent.
     let chunk_shape = PointN([CHUNK_SIZE; 3]);
-    let ambient_value = CubeVoxel(false);
+    let ambient_value = Voxel(0);
     let default_chunk_meta = ();
     // Normally we'd keep this map around in a resource, but we don't need to for this specific
     // example. We could also use an Array3 here instead of a ChunkMap3, but we use chunks for
@@ -305,7 +333,7 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
                 let padded_chunk_extent =
                     padded_greedy_quads_chunk_extent(&map_ref.extent_for_chunk_at_key(chunk_key));
 
-                let mut padded_chunk = Array3::fill(padded_chunk_extent, CubeVoxel(false));
+                let mut padded_chunk = Array3::fill(padded_chunk_extent, Voxel(0));
                 copy_extent(&padded_chunk_extent, &map_reader, &mut padded_chunk);
 
                 // TODO bevy: we could avoid re-allocating the buffers on every call if we had
@@ -313,17 +341,25 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
                 let mut buffer = GreedyQuadsBuffer::new(padded_chunk_extent);
                 greedy_quads(&padded_chunk, &padded_chunk_extent, &mut buffer);
 
+                let mut vert_colors: Vec<f32> = Vec::new();
+
                 let mut mesh = PosNormTexMesh::default();
                 for group in buffer.quad_groups.iter() {
-                    for (quad, _material) in group.quads.iter() {
+                    for (quad, material) in group.quads.iter() {
                         group.meta.add_quad_to_pos_norm_tex_mesh(&quad, &mut mesh);
+                        let tex_arr_val = *material as f32;
+                        vert_colors
+                            .extend_from_slice(&[tex_arr_val, tex_arr_val, tex_arr_val, tex_arr_val]);
                     }
                 }
 
                 if mesh.is_empty() {
                     None
                 } else {
-                    Some(mesh)
+                    Some(ChunkMeshData {
+                        pos_norm_tex_mesh: mesh,
+                        vert_tex_arr_vals: vert_colors,
+                    })
                 }
             })
         }
