@@ -74,7 +74,7 @@ fn forward_vector(rotation: &Quat) -> Vec3 {
 
 fn forward_walk_vector(rotation: &Quat) -> Vec3 {
     let f = forward_vector(rotation);
-    let f_flattened = Vec3::new(f.x(), 0.0, f.z()).normalize();
+    let f_flattened = Vec3::new(f.x, 0.0, f.z).normalize();
     f_flattened
 }
 
@@ -101,9 +101,9 @@ fn player_movement_system(
     for (mut player_controller, mut transform, mut _g_transform) in &mut query.iter_mut() {
         if fp_controller_state.cursor_locked {
             player_controller.yaw -=
-                delta.x() * time.delta_seconds * player_controller.look_sensitivity;
+                delta.x * time.delta_seconds() * player_controller.look_sensitivity;
             player_controller.pitch -=
-                delta.y() * time.delta_seconds * player_controller.look_sensitivity;
+                delta.y * time.delta_seconds() * player_controller.look_sensitivity;
 
             let mut axis_h = 0.0;
             let mut axis_v = 0.0;
@@ -136,14 +136,14 @@ fn player_movement_system(
             let delta_forward = forward_walk_vector(&transform.rotation)
                 * axis_v
                 * player_controller.speed
-                * time.delta_seconds;
+                * time.delta_seconds();
 
-            let delta_up = Vec3::unit_y() * axis_y * player_controller.speed * time.delta_seconds;
+            let delta_up = Vec3::unit_y() * axis_y * player_controller.speed * time.delta_seconds();
 
             let delta_strafe = strafe_vector(&transform.rotation)
                 * axis_h
                 * player_controller.speed
-                * time.delta_seconds;
+                * time.delta_seconds();
 
             transform.translation += delta_forward + delta_up + delta_strafe;
             transform.rotation =

@@ -16,7 +16,7 @@ use bevy::{
         texture::AddressMode,
     },
     tasks::{ComputeTaskPool, TaskPool},
-    type_registry::TypeUuid,
+    reflect::TypeUuid,
 };
 
 pub struct MeshGeneratorState {
