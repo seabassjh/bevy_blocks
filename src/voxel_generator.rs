@@ -7,6 +7,7 @@ use rand::Rng;
 
 use bevy::{
     prelude::*,
+    reflect::TypeUuid,
     render::{
         mesh::{Indices, VertexAttributeValues},
         pipeline::{PipelineDescriptor, PrimitiveTopology, RenderPipeline},
@@ -16,7 +17,6 @@ use bevy::{
         texture::AddressMode,
     },
     tasks::{ComputeTaskPool, TaskPool},
-    reflect::TypeUuid,
 };
 
 pub struct MeshGeneratorState {
@@ -66,11 +66,15 @@ impl Cubic {
                         let max_y =
                             (noise.get([x as f64, z as f64]) * yscale + yoffset).round() as i32;
                         let level =
-                            Extent3i::from_min_and_shape(PointN([x, 0, z]), PointN([1, max_y, 1]));
-                        let vox_material = rng.gen_range(1,5) as VoxelMaterial;
+                            Extent3i::from_min_and_shape(PointN([x, 0, z]), PointN([1, 1, 1]));
+                        let vox_material = rng.gen_range(1, 5) as VoxelMaterial;
                         voxels.fill_extent(&level, Voxel(vox_material));
                     }
                 }
+
+                let debug_blocks_0 =
+                    Extent3i::from_min_and_shape(PointN([1, 1, 1]), PointN([1, 1, 1]));
+                voxels.fill_extent(&debug_blocks_0, Voxel(1));
 
                 voxels
             }
@@ -111,7 +115,7 @@ pub struct MeshMaterial(pub Handle<StandardMaterial>);
 pub struct MyMaterial {
     pub albedo: Color,
     pub albedo_texture: Option<Handle<Texture>>,
-    pub tex_array_val: u32,
+    pub custom_val: f32,
     #[render_resources(ignore)]
     pub shaded: bool,
 }
@@ -149,7 +153,7 @@ pub fn setup_voxel_generator_system(
     let material_handle = materials.add(MyMaterial {
         albedo: Color::rgb(1.0, 1.0, 1.0),
         albedo_texture: Some(texture_handle.clone()),
-        tex_array_val: 0,
+        custom_val: 0.0,
         shaded: true,
     });
     // // Create a new material
@@ -214,7 +218,6 @@ pub fn voxel_generator_system(
             None => return,
         };
 
-
         let material_handle = materials.add(StandardMaterial {
             albedo_texture: Some(texture_handle.clone()),
             shaded: true,
@@ -273,8 +276,13 @@ fn create_mesh_entity(
         VertexAttributeValues::Float2(mesh.tex_coords),
     );
     render_mesh.set_attribute(
-        "Vertex_Color",
-        VertexAttributeValues::Float(mesh_data.vert_tex_arr_vals),
+        "Voxel_Value",
+        VertexAttributeValues::Float(mesh_data.vert_vox_vals),
+    );
+
+    render_mesh.set_attribute(
+        "Vertex_AO",
+        VertexAttributeValues::Float(mesh_data.vert_ao_vals),
     );
     render_mesh.set_indices(Some(Indices::U32(
         mesh.indices.iter().map(|i| *i as u32).collect(),
@@ -299,7 +307,8 @@ fn create_mesh_entity(
 
 struct ChunkMeshData {
     pos_norm_tex_mesh: PosNormTexMesh,
-    vert_tex_arr_vals: Vec<f32>,
+    vert_vox_vals: Vec<f32>,
+    vert_ao_vals: Vec<f32>,
 }
 
 const CHUNK_SIZE: i32 = 16;
@@ -341,15 +350,60 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
                 let mut buffer = GreedyQuadsBuffer::new(padded_chunk_extent);
                 greedy_quads(&padded_chunk, &padded_chunk_extent, &mut buffer);
 
-                let mut vert_colors: Vec<f32> = Vec::new();
+                let mut vert_vox_vals: Vec<f32> = Vec::new();
+                let mut vert_ao_vals: Vec<f32> = Vec::new();
 
                 let mut mesh = PosNormTexMesh::default();
                 for group in buffer.quad_groups.iter() {
                     for (quad, material) in group.quads.iter() {
+                        let corners = group.meta.quad_corners(quad);
+                        for c0 in corners.iter() {
+                            let loc: Point3i = c0.in_voxel();
+
+                            let loc_side1: Point3i = PointN([loc.x() + 1, loc.y() + 1, loc.z()]);
+                            let loc_side2: Point3i = PointN([loc.x(), loc.y() + 1, loc.z() + 1]);
+                            let loc_corner: Point3i =
+                                PointN([loc.x() + 1, loc.y() + 1, loc.z() + 1]);
+
+                            let has_side1 = if padded_chunk_extent.contains(&loc_side1) {
+                                let vox_side1: Voxel = padded_chunk.get(&loc_side1);
+                                vox_side1.material() != 0
+                            } else {
+                                false
+                            };
+
+                            let has_side2 = if padded_chunk_extent.contains(&loc_side2) {
+                                let vox_side2: Voxel = padded_chunk.get(&loc_side2);
+                                vox_side2.material() != 0
+                            } else {
+                                false
+                            };
+
+                            let has_corner = if padded_chunk_extent.contains(&loc_corner) {
+                                let vox_corner: Voxel = padded_chunk.get(&loc_corner);
+                                vox_corner.material() != 0
+                            } else {
+                                false
+                            };
+
+                            let vertex_ao = || {
+                                if has_side1 && has_side2 {
+                                    return 0;
+                                }
+
+                                3 - (has_side1 as i32 + has_side2 as i32 + has_corner as i32)
+                            };
+
+                            vert_ao_vals.extend_from_slice(&[vertex_ao() as f32])
+                        }
+
+                        //println!("Location: {:?}", c0.in_voxel());
+                        //println!("Voxel: {:?}, Location: {:?}", vox, loc);
+
                         group.meta.add_quad_to_pos_norm_tex_mesh(&quad, &mut mesh);
-                        let tex_arr_val = *material as f32;
-                        vert_colors
-                            .extend_from_slice(&[tex_arr_val, tex_arr_val, tex_arr_val, tex_arr_val]);
+                        let voxel_val = *material as f32;
+                        vert_vox_vals
+                            .extend_from_slice(&[voxel_val, voxel_val, voxel_val, voxel_val]);
                     }
                 }
 
@@ -358,7 +412,8 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
                 } else {
                     Some(ChunkMeshData {
                         pos_norm_tex_mesh: mesh,
-                        vert_tex_arr_vals: vert_colors,
+                        vert_vox_vals,
+                        vert_ao_vals,
                     })
                 }
             })

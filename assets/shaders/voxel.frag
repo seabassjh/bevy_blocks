@@ -11,9 +11,9 @@ struct Light {
 layout(location = 0) in vec3 v_Position;
 layout(location = 1) in vec3 v_Normal;
 layout(location = 2) in vec2 v_Uv;
-
+layout(location = 4) in float v_Vox_Val;
+layout(location = 6) in float v_AO;
 layout(location = 0) out vec4 o_Target;
-layout(location = 4) in float v_color;
 
 layout(set = 0, binding = 0) uniform Camera {
     mat4 ViewProj;
@@ -32,20 +32,22 @@ layout(set = 3, binding = 0) uniform MyMaterial_albedo {
 layout(set = 3, binding = 1) uniform texture2DArray MyMaterial_albedo_texture;
 layout(set = 3, binding = 2) uniform sampler MyMaterial_albedo_texture_sampler;
 
-layout(set = 3, binding = 3) uniform MyMaterial_tex_array_val {
-    uint tex_array_val;
+layout(set = 3, binding = 3) uniform MyMaterial_custom_val {
+    float custom_val;
 };
-
 
 void main() {
     vec4 output_color = Albedo;
-    output_color *= texture(
-        sampler2DArray(MyMaterial_albedo_texture, MyMaterial_albedo_texture_sampler),
-        vec3(v_Uv, v_color));
+    // output_color *= texture(
+    //     sampler2DArray(MyMaterial_albedo_texture, MyMaterial_albedo_texture_sampler),
+    //     vec3(v_Uv, v_Vox_Val));
+
+    output_color *= vec4(vec3(v_Vox_Val), 1.0);
 
     vec3 normal = normalize(v_Normal);
     // accumulate color
-    vec3 color = AmbientColor;
+    float ao = 3.0 - v_AO;
+    vec3 color = AmbientColor - vec3(ao/50.0);
     for (int i=0; i<int(NumLights.x) && i<MAX_LIGHTS; ++i) {
         Light light = SceneLights[i];
         // compute Lambertian diffuse term
