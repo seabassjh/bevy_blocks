@@ -312,31 +312,31 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
     // Chunk up the voxels just to show that meshing across chunks is consistent.
     let chunk_shape = PointN([CHUNK_SIZE; 3]);
     let ambient_value = Voxel(0);
-    let default_chunk_meta = ();
-    // Normally we'd keep this map around in a resource, but we don't need to for this specific
-    // example. We could also use an Array3 here instead of a ChunkMap3, but we use chunks for
-    // educational purposes.
-    let mut map = ChunkMap3::new(
+
+    let builder = ChunkMapBuilder {
         chunk_shape,
         ambient_value,
-        default_chunk_meta,
-        FastLz4 { level: 10 },
-    );
+        default_chunk_metadata: (),
+    };
+    // Normally we'd keep this map around in a resource, but we don't need to for this specific example. We could also use an
+    // Array3 here instead of a ChunkMap3, but we use chunks for educational purposes.
+    let mut map = builder.build_with_hash_map_storage();
     copy_extent(voxels.extent(), &voxels, &mut map);
+
+
 
     // Generate the chunk meshes.
     let map_ref = &map;
 
     pool.scope(|s| {
-        for chunk_key in map_ref.chunk_keys() {
+        for chunk_key in map_ref.storage().keys() {
             s.spawn(async move {
-                let local_cache = LocalChunkCache3::new();
-                let map_reader = ChunkMapReader3::new(map_ref, &local_cache);
-                let padded_chunk_extent =
-                    padded_greedy_quads_chunk_extent(&map_ref.extent_for_chunk_at_key(chunk_key));
+                let padded_chunk_extent = padded_greedy_quads_chunk_extent(
+                    &map_ref.indexer.extent_for_chunk_at_key(*chunk_key),
+                );
 
                 let mut padded_chunk = Array3::fill(padded_chunk_extent, Voxel(0));
-                copy_extent(&padded_chunk_extent, &map_reader, &mut padded_chunk);
+                copy_extent(&padded_chunk_extent, map_ref, &mut padded_chunk);
 
                 // TODO bevy: we could avoid re-allocating the buffers on every call if we had
                 // thread-local storage accessible from this task
@@ -349,7 +349,7 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
                 let mut mesh = PosNormTexMesh::default();
                 for group in buffer.quad_groups.iter() {
                     for (quad, material) in group.quads.iter() {
-                        let corners = group.meta.quad_corners(quad);
+                        let corners = group.face.quad_corners(quad);
                         for c0 in corners.iter() {
                             let loc: Point3i = c0.in_voxel();
 
@@ -393,7 +393,7 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
                         //println!("Location: {:?}", c0.in_voxel());
                         //println!("Voxel: {:?}, Location: {:?}", vox, loc);
 
-                        group.meta.add_quad_to_pos_norm_tex_mesh(&quad, &mut mesh);
+                        group.face.add_quad_to_pos_norm_tex_mesh(&quad, &mut mesh);
                         let voxel_mat = *material as f32;
                         vert_vox_mat_vals
                             .extend_from_slice(&[voxel_mat, voxel_mat, voxel_mat, voxel_mat]);

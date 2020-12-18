@@ -12,8 +12,8 @@ fn main() {
     App::build()
         .add_resource(WindowDescriptor {
             title: "My Bevy Game".to_string(),
-            width: 1920,
-            height: 1080,
+            width: 1920.0,
+            height: 1080.0,
             vsync: true,
             resizable: true,
             ..Default::default()
