@@ -1,3 +1,6 @@
 [submodule "crates/bevy"]
 	path = crates/bevy
 	url = https://github.com/bevyengine/bevy.git
+[submodule "crates/building-blocks"]
+	path = crates/building-blocks
+	url = https://github.com/Seabass247/building-blocks.git
