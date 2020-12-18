@@ -11,7 +11,7 @@ struct Light {
 layout(location = 0) in vec3 v_Position;
 layout(location = 1) in vec3 v_Normal;
 layout(location = 2) in vec2 v_Uv;
-layout(location = 4) in float v_Vox_Val;
+layout(location = 4) in float v_Vox_Mat;
 layout(location = 6) in float v_AO;
 layout(location = 0) out vec4 o_Target;
 
@@ -42,12 +42,12 @@ void main() {
     //     sampler2DArray(MyMaterial_albedo_texture, MyMaterial_albedo_texture_sampler),
     //     vec3(v_Uv, v_Vox_Val));
 
-    output_color *= vec4(vec3(v_Vox_Val), 1.0);
+    //output_color *= vec4(vec3(v_Vox_Val), 1.0);
 
     vec3 normal = normalize(v_Normal);
     // accumulate color
     float ao = 3.0 - v_AO;
-    vec3 color = AmbientColor - vec3(ao/50.0);
+    vec3 color = AmbientColor;
     for (int i=0; i<int(NumLights.x) && i<MAX_LIGHTS; ++i) {
         Light light = SceneLights[i];
         // compute Lambertian diffuse term

@@ -4,7 +4,7 @@ mod voxel_generator;
 use bevy::{math::vec4, prelude::*};
 use third_person_controller::ThirdPersonControllerPlugin;
 use voxel_generator::{
-    setup_voxel_generator_system, voxel_generator_system, MeshGeneratorState, MeshMaterial,
+    setup_voxel_generator_system, voxel_generator_system, MeshGeneratorState,
     MyMaterial,
 };
 
@@ -52,10 +52,6 @@ fn setup(
             transform: Transform::from_translation(Vec3::new(0.0, 50.0, 0.0)),
             ..Default::default()
         });
-
-    commands.insert_resource(MeshMaterial(
-        materials.add(Color::rgb(0.1, 0.2, 0.1).into()),
-    ));
 
     commands.insert_resource(MeshGeneratorState::new());
 }

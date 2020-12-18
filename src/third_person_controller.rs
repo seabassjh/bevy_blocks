@@ -22,8 +22,8 @@ fn setup(commands: &mut Commands, mut windows: ResMut<Windows>) {
     commands
         .spawn(Camera3dBundle {
             transform: Transform {
-                translation: Vec3::new(6.0, 20.0, 6.0),
-                rotation: Quat::from_rotation_x(-30.0 * std::f32::consts::PI / 180.0),
+                translation: Vec3::new(-6.0, 5.0, -6.0),
+                rotation: Quat::from_rotation_x(0.0 * std::f32::consts::PI / 180.0),
                 scale: Vec3::one(),
             },
             ..Default::default()
@@ -49,7 +49,7 @@ impl Default for PlayerController {
     fn default() -> Self {
         Self {
             speed: 10.0,
-            yaw: 0.0,
+            yaw: -135.0 * std::f32::consts::PI / 180.0,
             pitch: 0.0,
             look_sensitivity: 0.1,
         }

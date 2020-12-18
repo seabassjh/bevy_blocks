@@ -4,8 +4,8 @@ layout(location = 0) in vec3 Vertex_Position;
 layout(location = 1) in vec3 Vertex_Normal;
 layout(location = 2) in vec2 Vertex_Uv;
 
-layout(location = 3) in float Voxel_Value;
-layout(location = 4) out float v_Vox_Val;
+layout(location = 3) in float Vertex_Voxel_Material;
+layout(location = 4) out float v_Vox_Mat;
 layout(location = 5) in float Vertex_AO;
 layout(location = 6) out float v_AO;
 
@@ -27,6 +27,6 @@ void main() {
     v_Position = (Model * vec4(Vertex_Position, 1.0)).xyz;
     v_Uv = Vertex_Uv;
     gl_Position = ViewProj * vec4(v_Position, 1.0);
-    v_Vox_Val = Voxel_Value;
+    v_Vox_Mat = Vertex_Voxel_Material;
     v_AO = Vertex_AO;
 }

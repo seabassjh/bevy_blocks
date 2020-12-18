@@ -67,7 +67,8 @@ impl Cubic {
                             (noise.get([x as f64, z as f64]) * yscale + yoffset).round() as i32;
                         let level =
                             Extent3i::from_min_and_shape(PointN([x, 0, z]), PointN([1, 1, 1]));
-                        let vox_material = rng.gen_range(1, 5) as VoxelMaterial;
+                        //let vox_material = rng.gen_range(1, 5) as VoxelMaterial;
+                        let vox_material = 1 as VoxelMaterial;
                         voxels.fill_extent(&level, Voxel(vox_material));
                     }
                 }
@@ -106,9 +107,6 @@ impl MaterialVoxel for Voxel {
         self.0
     }
 }
-
-#[derive(Default)]
-pub struct MeshMaterial(pub Handle<StandardMaterial>);
 
 #[derive(RenderResources, ShaderDefs, Default, TypeUuid)]
 #[uuid = "620f651b-adbe-464b-b740-ba0e547282ba"]
@@ -151,7 +149,7 @@ pub fn setup_voxel_generator_system(
     let texture_handle = asset_server.load("../assets/textures/terrain.png");
     // Create a new material
     let material_handle = materials.add(MyMaterial {
-        albedo: Color::rgb(1.0, 1.0, 1.0),
+        albedo: Color::rgb(0.0, 1.0, 0.0),
         albedo_texture: Some(texture_handle.clone()),
         custom_val: 0.0,
         shaded: true,
@@ -276,8 +274,8 @@ fn create_mesh_entity(
         VertexAttributeValues::Float2(mesh.tex_coords),
     );
     render_mesh.set_attribute(
-        "Voxel_Value",
-        VertexAttributeValues::Float(mesh_data.vert_vox_vals),
+        "Vertex_Voxel_Material",
+        VertexAttributeValues::Float(mesh_data.vert_vox_mat_vals),
     );
 
     render_mesh.set_attribute(
@@ -289,11 +287,6 @@ fn create_mesh_entity(
     )));
 
     commands
-        // .spawn(PbrComponents {
-        //     mesh: meshes.add(render_mesh),
-        //     material,
-        //     ..Default::default()
-        // })
         .spawn(MeshBundle {
             mesh: meshes.add(render_mesh),
             render_pipelines: pipelines,
@@ -307,7 +300,7 @@ fn create_mesh_entity(
 
 struct ChunkMeshData {
     pos_norm_tex_mesh: PosNormTexMesh,
-    vert_vox_vals: Vec<f32>,
+    vert_vox_mat_vals: Vec<f32>,
     vert_ao_vals: Vec<f32>,
 }
 
@@ -350,7 +343,7 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
                 let mut buffer = GreedyQuadsBuffer::new(padded_chunk_extent);
                 greedy_quads(&padded_chunk, &padded_chunk_extent, &mut buffer);
 
-                let mut vert_vox_vals: Vec<f32> = Vec::new();
+                let mut vert_vox_mat_vals: Vec<f32> = Vec::new();
                 let mut vert_ao_vals: Vec<f32> = Vec::new();
 
                 let mut mesh = PosNormTexMesh::default();
@@ -401,9 +394,9 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
                         //println!("Voxel: {:?}, Location: {:?}", vox, loc);
 
                         group.meta.add_quad_to_pos_norm_tex_mesh(&quad, &mut mesh);
-                        let voxel_val = *material as f32;
-                        vert_vox_vals
-                            .extend_from_slice(&[voxel_val, voxel_val, voxel_val, voxel_val]);
+                        let voxel_mat = *material as f32;
+                        vert_vox_mat_vals
+                            .extend_from_slice(&[voxel_mat, voxel_mat, voxel_mat, voxel_mat]);
                     }
                 }
 
@@ -412,7 +405,7 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
                 } else {
                     Some(ChunkMeshData {
                         pos_norm_tex_mesh: mesh,
-                        vert_vox_vals,
+                        vert_vox_mat_vals,
                         vert_ao_vals,
                     })
                 }
