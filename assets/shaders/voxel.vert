@@ -28,5 +28,20 @@ void main() {
     v_Uv = Vertex_Uv;
     gl_Position = ViewProj * vec4(v_Position, 1.0);
     v_Vox_Mat = Vertex_Voxel_Material;
-    v_AO = Vertex_AO;
+    
+    vec4 ao_curve = vec4(0.0, 0.65, 0.75, 0.9);
+    float ao = Vertex_AO;
+    if(ao == 0.0) {
+        v_AO = ao_curve.x;
+    }
+    if(ao == 1.0) {
+        v_AO = ao_curve.y;
+    }
+    if(ao == 2.0) {
+        v_AO = ao_curve.z;
+    }
+    if(ao == 3.0) {
+        v_AO = ao_curve.w;
+    }
+
 }

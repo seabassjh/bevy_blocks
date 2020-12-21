@@ -37,16 +37,18 @@ layout(set = 3, binding = 3) uniform MyMaterial_custom_val {
 };
 
 void main() {
-    vec4 output_color = Albedo;
-    // output_color *= texture(
-    //     sampler2DArray(MyMaterial_albedo_texture, MyMaterial_albedo_texture_sampler),
-    //     vec3(v_Uv, v_Vox_Val));
 
-    //output_color *= vec4(vec3(v_Vox_Val), 1.0);
+    vec4 output_color = Albedo - vec4(v_AO, v_AO, v_AO, 0.0);
+    //output_color = Albedo; // Disables AO
+    
+    output_color *= texture(
+        sampler2DArray(MyMaterial_albedo_texture, MyMaterial_albedo_texture_sampler),
+        vec3(v_Uv, v_Vox_Mat));
+
+    output_color *= vec4(vec3(v_Vox_Mat), 1.0);
 
     vec3 normal = normalize(v_Normal);
     // accumulate color
-    float ao = 3.0 - v_AO;
     vec3 color = AmbientColor;
     for (int i=0; i<int(NumLights.x) && i<MAX_LIGHTS; ++i) {
         Light light = SceneLights[i];

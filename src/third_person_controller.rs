@@ -19,16 +19,22 @@ pub struct InputState {
 }
 
 fn setup(commands: &mut Commands, mut windows: ResMut<Windows>) {
+    let player_controller = PlayerController::default();
+
     commands
         .spawn(Camera3dBundle {
             transform: Transform {
                 translation: Vec3::new(-6.0, 5.0, -6.0),
-                rotation: Quat::from_rotation_x(0.0 * std::f32::consts::PI / 180.0),
+                rotation: Quat::from_rotation_ypr(
+                    player_controller.yaw,
+                    player_controller.pitch,
+                    0.0,
+                ),
                 scale: Vec3::one(),
             },
             ..Default::default()
         })
-        .with(PlayerController::default());
+        .with(player_controller);
 
     commands.insert_resource(FPPlayerControllerState::new());
 

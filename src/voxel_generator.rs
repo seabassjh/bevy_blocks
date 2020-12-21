@@ -38,17 +38,44 @@ pub struct VoxelRenderHandles {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Cubic {
-    Terrace,
+enum Terrain {
+    Natural,
+    Debug,
 }
 
 const SEA_LEVEL: f64 = 10.0;
 const TERRAIN_Y_SCALE: f64 = 0.2;
 
-impl Cubic {
+impl Terrain {
     fn get_voxels(&self) -> Array3<Voxel> {
         match self {
-            Cubic::Terrace => {
+            Terrain::Natural => {
+                let mut rng = rand::thread_rng();
+                let rand_seed: u32 = rng.gen();
+                let noise = RidgedMulti::new()
+                    .set_seed(rand_seed)
+                    .set_frequency(0.008)
+                    .set_octaves(5);
+                let yoffset = SEA_LEVEL;
+                let yscale = TERRAIN_Y_SCALE * yoffset;
+
+                let extent =
+                    Extent3i::from_min_and_shape(PointN([-20; 3]), PointN([40; 3])).padded(1);
+                let mut voxels = Array3::fill(extent, Voxel(0));
+                for z in 0..40 {
+                    for x in 0..40 {
+                        let max_y =
+                            (noise.get([x as f64, z as f64]) * yscale + yoffset).round() as i32;
+                        let level =
+                            Extent3i::from_min_and_shape(PointN([x, 0, z]), PointN([1, max_y, 1]));
+                        let vox_material = rng.gen_range(1, 5) as VoxelMaterial;
+                        voxels.fill_extent(&level, Voxel(vox_material));
+                    }
+                }
+
+                voxels
+            },
+            Terrain::Debug => {
                 let mut rng = rand::thread_rng();
                 let rand_seed: u32 = rng.gen();
                 let noise = RidgedMulti::new()
@@ -74,9 +101,35 @@ impl Cubic {
                 }
 
                 let debug_blocks_0 =
-                    Extent3i::from_min_and_shape(PointN([1, 1, 1]), PointN([1, 1, 1]));
+                    Extent3i::from_min_and_shape(PointN([5, 2, 5]), PointN([1, 1, 1]));
+                let debug_blocks_1 =
+                    Extent3i::from_min_and_shape(PointN([7, 2, 5]), PointN([1, 1, 1]));
+                let debug_blocks_2 =
+                    Extent3i::from_min_and_shape(PointN([7, 3, 6]), PointN([1, 1, 1]));
+                let debug_blocks_3 =
+                    Extent3i::from_min_and_shape(PointN([9, 2, 5]), PointN([1, 1, 1]));
+                let debug_blocks_4 =
+                    Extent3i::from_min_and_shape(PointN([9, 3, 6]), PointN([1, 1, 1]));
+                let debug_blocks_5 =
+                    Extent3i::from_min_and_shape(PointN([10, 3, 6]), PointN([1, 1, 1]));
+                let debug_blocks_6 =
+                    Extent3i::from_min_and_shape(PointN([12, 2, 5]), PointN([1, 1, 1]));
+                let debug_blocks_7 =
+                    Extent3i::from_min_and_shape(PointN([12, 3, 6]), PointN([1, 1, 1]));
+                let debug_blocks_8 =
+                    Extent3i::from_min_and_shape(PointN([13, 3, 6]), PointN([1, 1, 1]));
+                let debug_blocks_9 =
+                    Extent3i::from_min_and_shape(PointN([13, 3, 5]), PointN([1, 1, 1]));
                 voxels.fill_extent(&debug_blocks_0, Voxel(1));
-
+                voxels.fill_extent(&debug_blocks_1, Voxel(1));
+                voxels.fill_extent(&debug_blocks_2, Voxel(1));
+                voxels.fill_extent(&debug_blocks_3, Voxel(1));
+                voxels.fill_extent(&debug_blocks_4, Voxel(1));
+                voxels.fill_extent(&debug_blocks_5, Voxel(1));
+                voxels.fill_extent(&debug_blocks_6, Voxel(1));
+                voxels.fill_extent(&debug_blocks_7, Voxel(1));
+                voxels.fill_extent(&debug_blocks_8, Voxel(1));
+                voxels.fill_extent(&debug_blocks_9, Voxel(1));
                 voxels
             }
         }
@@ -118,21 +171,22 @@ pub struct MyMaterial {
     pub shaded: bool,
 }
 
-const FRAGMENT_SHADER: &str = include_str!("../assets/shaders/voxel.frag");
-const VERTEX_SHADER: &str = include_str!("../assets/shaders/voxel.vert");
+const FRAGMENT_SHADER: &str = "../assets/shaders/voxel.frag";
+const VERTEX_SHADER: &str = "../assets/shaders/voxel.vert";
 
 pub fn setup_voxel_generator_system(
     commands: &mut Commands,
-    asset_server: Res<AssetServer>,
+    asset_server: ResMut<AssetServer>,
     mut pipelines: ResMut<Assets<PipelineDescriptor>>,
     mut shaders: ResMut<Assets<Shader>>,
     mut materials: ResMut<Assets<MyMaterial>>,
     mut render_graph: ResMut<RenderGraph>,
 ) {
+    asset_server.watch_for_changes().unwrap();
     // Create a new shader pipeline
     let pipeline_handle = pipelines.add(PipelineDescriptor::default_config(ShaderStages {
-        vertex: shaders.add(Shader::from_glsl(ShaderStage::Vertex, VERTEX_SHADER)),
-        fragment: Some(shaders.add(Shader::from_glsl(ShaderStage::Fragment, FRAGMENT_SHADER))),
+        vertex: asset_server.load::<Shader, _>(VERTEX_SHADER),
+        fragment: Some(asset_server.load::<Shader, _>(FRAGMENT_SHADER)),
     }));
 
     // Add an AssetRenderResourcesNode to our Render Graph. This will bind MyMaterial resources to our shader
@@ -149,7 +203,7 @@ pub fn setup_voxel_generator_system(
     let texture_handle = asset_server.load("../assets/textures/terrain.png");
     // Create a new material
     let material_handle = materials.add(MyMaterial {
-        albedo: Color::rgb(0.0, 1.0, 0.0),
+        albedo: Color::rgb(1.0, 1.0, 1.0),
         albedo_texture: Some(texture_handle.clone()),
         custom_val: 0.0,
         shaded: true,
@@ -226,7 +280,7 @@ pub fn voxel_generator_system(
             RenderPipelines::from_pipelines(vec![RenderPipeline::new(assets.pipeline.clone())]);
 
         // Sample the new shape.
-        let chunk_meshes = generate_chunk_meshes_from_cubic(Cubic::Terrace, &pool.0);
+        let chunk_meshes = generate_chunk_meshes(Terrain::Natural, &pool.0);
         for mesh in chunk_meshes.into_iter() {
             if let Some(mesh) = mesh {
                 if mesh.pos_norm_tex_mesh.is_empty() {
@@ -236,7 +290,6 @@ pub fn voxel_generator_system(
                 state.chunk_mesh_entities.push(create_mesh_entity(
                     mesh,
                     commands,
-                    material_handle.clone(),
                     my_material_handle.clone(),
                     render_pipelines.clone(),
                     &mut meshes,
@@ -249,7 +302,6 @@ pub fn voxel_generator_system(
 fn create_mesh_entity(
     mesh_data: ChunkMeshData,
     commands: &mut Commands,
-    material: Handle<StandardMaterial>,
     my_material: Handle<MyMaterial>,
     pipelines: RenderPipelines,
     meshes: &mut Assets<Mesh>,
@@ -282,6 +334,7 @@ fn create_mesh_entity(
         "Vertex_AO",
         VertexAttributeValues::Float(mesh_data.vert_ao_vals),
     );
+
     render_mesh.set_indices(Some(Indices::U32(
         mesh.indices.iter().map(|i| *i as u32).collect(),
     )));
@@ -306,8 +359,8 @@ struct ChunkMeshData {
 
 const CHUNK_SIZE: i32 = 16;
 
-fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option<ChunkMeshData>> {
-    let voxels = cubic.get_voxels();
+fn generate_chunk_meshes(voxel_generation: Terrain, pool: &TaskPool) -> Vec<Option<ChunkMeshData>> {
+    let voxels = voxel_generation.get_voxels();
 
     // Chunk up the voxels just to show that meshing across chunks is consistent.
     let chunk_shape = PointN([CHUNK_SIZE; 3]);
@@ -322,8 +375,6 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
     // Array3 here instead of a ChunkMap3, but we use chunks for educational purposes.
     let mut map = builder.build_with_hash_map_storage();
     copy_extent(voxels.extent(), &voxels, &mut map);
-
-
 
     // Generate the chunk meshes.
     let map_ref = &map;
@@ -348,48 +399,33 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
 
                 let mut mesh = PosNormTexMesh::default();
                 for group in buffer.quad_groups.iter() {
+                    let y_offset: i32 = match group.face.n {
+                        PointN([0, 1, 0]) => {
+                            if group.face.n_sign > 0 {
+                                0
+                            } else {
+                                -1
+                            }
+                        }
+                        _ => 0,
+                    };
+
                     for (quad, material) in group.quads.iter() {
-                        let corners = group.face.quad_corners(quad);
-                        for c0 in corners.iter() {
-                            let loc: Point3i = c0.in_voxel();
-
-                            let loc_side1: Point3i = PointN([loc.x() + 1, loc.y() + 1, loc.z()]);
-                            let loc_side2: Point3i = PointN([loc.x(), loc.y() + 1, loc.z() + 1]);
-                            let loc_corner: Point3i =
-                                PointN([loc.x() + 1, loc.y() + 1, loc.z() + 1]);
-
-                            let has_side1 = if padded_chunk_extent.contains(&loc_side1) {
-                                let vox_side1: Voxel = padded_chunk.get(&loc_side1);
-                                vox_side1.material() != 0
+                        for v in group.face.quad_corners(quad).iter() {
+                            let loc: Point3i = PointN([(v.x()) as i32, (v.y()) as i32, (v.z()) as i32]);
+                            let top0 = if padded_chunk_extent.contains(&loc) {
+                                let vox: Voxel = padded_chunk.get(&loc);
+                                !vox.is_empty()
                             } else {
                                 false
                             };
-
-                            let has_side2 = if padded_chunk_extent.contains(&loc_side2) {
-                                let vox_side2: Voxel = padded_chunk.get(&loc_side2);
-                                vox_side2.material() != 0
-                            } else {
-                                false
-                            };
-
-                            let has_corner = if padded_chunk_extent.contains(&loc_corner) {
-                                let vox_corner: Voxel = padded_chunk.get(&loc_corner);
-                                vox_corner.material() != 0
-                            } else {
-                                false
-                            };
-
-                            let vertex_ao = || {
-                                if has_side1 && has_side2 {
-                                    return 0;
-                                }
-
-                                3 - (has_side1 as i32 + has_side2 as i32 + has_corner as i32)
-                            };
-
-                            vert_ao_vals.extend_from_slice(&[vertex_ao() as f32])
+                            
+                            let v_ao =
+                                get_ao_at_vert(*v, &padded_chunk, &padded_chunk_extent) as f32;
+                            vert_ao_vals.extend_from_slice(&[v_ao]);
                         }
 
+                        //vert_ao_vals.extend_from_slice(&[vertex_ao() as f32]);
                         //println!("Location: {:?}", c0.in_voxel());
                         //println!("Voxel: {:?}, Location: {:?}", vox, loc);
 
@@ -412,4 +448,101 @@ fn generate_chunk_meshes_from_cubic(cubic: Cubic, pool: &TaskPool) -> Vec<Option
             })
         }
     })
+}
+
+fn get_ao_at_vert(v: Point3f, padded_chunk: &ArrayN<[i32; 3], Voxel>, padded_chunk_extent: &Extent3i) -> i32
+{
+
+    let loc: Point3i = PointN([(v.x()) as i32, (v.y()) as i32, (v.z()) as i32]);
+
+    let top0_loc = PointN([loc.x() - 1, loc.y(), loc.z()]);
+    let top1_loc: Point3i = PointN([loc.x(), loc.y(), loc.z() - 1]);
+    let top2_loc: Point3i = PointN([loc.x(), loc.y(), loc.z()]);
+    let top3_loc: Point3i = PointN([loc.x() - 1, loc.y(), loc.z() - 1]);
+
+    let bot0_loc: Point3i = PointN([loc.x() - 1, loc.y() - 1, loc.z()]);
+    let bot1_loc: Point3i = PointN([loc.x(), loc.y() - 1, loc.z() - 1]);
+    let bot2_loc: Point3i = PointN([loc.x(), loc.y() - 1, loc.z()]);
+    let bot3_loc: Point3i = PointN([loc.x() - 1, loc.y() - 1, loc.z() - 1]);
+
+    let top0 = if padded_chunk_extent.contains(&top0_loc) {
+        let vox = padded_chunk.get(&top0_loc);
+        !vox.is_empty()
+    } else {
+        false
+    };
+
+    let top1 = if padded_chunk_extent.contains(&top1_loc) {
+        let vox = padded_chunk.get(&top1_loc);
+        !vox.is_empty()
+    } else {
+        false
+    };
+    
+    let top2 = if padded_chunk_extent.contains(&top2_loc) {
+        let vox = padded_chunk.get(&top2_loc);
+        !vox.is_empty()
+    } else {
+        false
+    };
+    
+    let top3 = if padded_chunk_extent.contains(&top3_loc) {
+        let vox = padded_chunk.get(&top3_loc);
+        !vox.is_empty()
+    } else {
+        false
+    };
+
+    let bot0 = if padded_chunk_extent.contains(&bot0_loc) {
+        let vox = padded_chunk.get(&bot0_loc);
+        !vox.is_empty()
+    } else {
+        false
+    };
+
+    let bot1 = if padded_chunk_extent.contains(&bot1_loc) {
+        let vox = padded_chunk.get(&bot1_loc);
+        !vox.is_empty()
+    } else {
+        false
+    };
+
+    let bot2 = if padded_chunk_extent.contains(&bot2_loc) {
+        let vox = padded_chunk.get(&bot2_loc);
+        !vox.is_empty()
+    } else {
+        false
+    };
+
+    let bot3 = if padded_chunk_extent.contains(&bot3_loc) {
+        let vox = padded_chunk.get(&bot3_loc);
+        !vox.is_empty()
+    } else {
+        false
+    };
+
+    let (side0, side1, corner) = 
+	if !top0 && bot0 {
+		(top2, top3, top1)
+	} else {
+        if !top1 && bot1 {
+            (top2, top3, top0)
+        } else {
+            if !top2 && bot2 {
+                (top0, top1, top3)
+            } else {
+                if !top3 && bot3 {
+                    (top0, top1, top2)
+                } else {
+                    return 0
+                }
+            }
+        }
+    };
+
+    if side0 && side1 {
+		return 3;
+    } else {
+        return side0 as i32 + side1 as i32 + corner as i32
+    }
 }

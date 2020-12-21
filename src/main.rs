@@ -4,8 +4,7 @@ mod voxel_generator;
 use bevy::{math::vec4, prelude::*};
 use third_person_controller::ThirdPersonControllerPlugin;
 use voxel_generator::{
-    setup_voxel_generator_system, voxel_generator_system, MeshGeneratorState,
-    MyMaterial,
+    setup_voxel_generator_system, voxel_generator_system, MeshGeneratorState, MyMaterial,
 };
 
 fn main() {
@@ -32,9 +31,13 @@ fn main() {
 /// set up a simple 3D scene
 fn setup(
     commands: &mut Commands,
+    asset_server: ResMut<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    // Watch for changes
+    asset_server.watch_for_changes().unwrap();
+
     // add entities to the world
     commands
         // sphere
