@@ -1,8 +1,8 @@
-mod third_person_controller;
+mod first_person_controller;
 mod voxel_generator;
 
-use bevy::{math::vec4, prelude::*};
-use third_person_controller::ThirdPersonControllerPlugin;
+use bevy::{prelude::*};
+use first_person_controller::ThirdPersonControllerPlugin;
 use voxel_generator::{
     setup_voxel_generator_system, voxel_generator_system, MeshGeneratorState, MyMaterial,
 };
