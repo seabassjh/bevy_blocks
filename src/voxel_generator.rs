@@ -7,19 +7,22 @@ use building_blocks::storage::{prelude::*, IsEmpty};
 use noise::{MultiFractal, NoiseFn, RidgedMulti, Seedable};
 use rand::Rng;
 
-use bevy::{
-    prelude::*,
-    reflect::TypeUuid,
-    render::{
+use bevy::{asset::LoadState, prelude::*, reflect::TypeUuid, render::{
         mesh::{Indices, VertexAttributeValues},
         pipeline::{PipelineDescriptor, PrimitiveTopology, RenderPipeline},
         render_graph::{base, AssetRenderResourcesNode, RenderGraph},
         renderer::RenderResources,
         shader::{ShaderDefs, ShaderStages},
         texture::AddressMode,
-    },
-    tasks::{ComputeTaskPool, TaskPool},
-};
+    }, tasks::{ComputeTaskPool, TaskPool}};
+
+const STAGE: &str = "app_state";
+
+#[derive(Clone)]
+enum PluginState {
+    Setup,
+    Finshed,
+}
 
 pub struct VoxelGeneratorPlugin;
 
@@ -27,8 +30,31 @@ impl Plugin for VoxelGeneratorPlugin {
     fn build(&self, builder: &mut AppBuilder) {
         builder
             .add_asset::<MyMaterial>()
-            .add_startup_system(init_voxel_generator_system.system())
+            .add_resource(State::new(PluginState::Setup))
+            .add_resource(MeshGeneratorState::new())
+            .init_resource::<VoxelRenderHandles>()
+            .add_stage_after(stage::UPDATE, STAGE, StateStage::<PluginState>::default())
+            .on_state_enter(STAGE, PluginState::Setup, load_textures.system())
+            .on_state_update(STAGE, PluginState::Setup, check_textures.system())
+            .on_state_enter(STAGE, PluginState::Finshed, init_voxel_generator_system.system())
             .add_system(voxel_generator_system.system());
+
+    }
+}
+
+fn load_textures(mut handles: ResMut<VoxelRenderHandles>, asset_server: Res<AssetServer>) {
+    handles.loading_texture = asset_server.load("../assets/textures/terrain.png");
+}
+
+fn check_textures(
+    mut state: ResMut<State<PluginState>>,
+    handles: ResMut<VoxelRenderHandles>,
+    asset_server: Res<AssetServer>,
+) {
+    if let LoadState::Loaded =
+        asset_server.get_load_state(handles.loading_texture.clone())
+    {
+        state.set_next(PluginState::Finshed).unwrap();
     }
 }
 
@@ -44,6 +70,7 @@ impl MeshGeneratorState {
     }
 }
 
+#[derive(Default)]
 pub struct VoxelRenderHandles {
     loading_texture: Handle<Texture>,
     material: Option<Handle<MyMaterial>>,
@@ -84,106 +111,8 @@ impl Default for GeneratedVoxelResource {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Terrain {
-    Natural,
-    AllBlocks,
-    Debug,
-}
-
 const SEA_LEVEL: f64 = 10.0;
 const TERRAIN_Y_SCALE: f64 = 0.2;
-
-impl Terrain {
-    fn get_voxels(&self) -> Array3<Voxel> {
-        match self {
-            Terrain::Natural => {
-                let mut rng = rand::thread_rng();
-                let rand_seed: u32 = rng.gen();
-                let noise = RidgedMulti::new()
-                    .set_seed(rand_seed)
-                    .set_frequency(0.008)
-                    .set_octaves(5);
-                let yoffset = SEA_LEVEL;
-                let yscale = TERRAIN_Y_SCALE * yoffset;
-
-                let extent =
-                    Extent3i::from_min_and_shape(PointN([-20; 3]), PointN([40; 3])).padded(1);
-                let mut voxels = Array3::fill(extent, Voxel(0));
-                for z in 0..40 {
-                    for x in 0..40 {
-                        let max_y =
-                            (noise.get([x as f64, z as f64]) * yscale + yoffset).round() as i32;
-                        let level =
-                            Extent3i::from_min_and_shape(PointN([x, 0, z]), PointN([1, max_y, 1]));
-                        let vox_material = rng.gen_range(1, 5) as VoxelMaterial;
-                        voxels.fill_extent(&level, Voxel(vox_material));
-                    }
-                }
-
-                voxels
-            },
-            Terrain::AllBlocks => {
-                let extent =
-                    Extent3i::from_min_and_shape(PointN([-20; 3]), PointN([40; 3])).padded(1);
-                let mut voxels = Array3::fill(extent, Voxel(0));
-
-                let debug_blocks_0 =
-                    Extent3i::from_min_and_shape(PointN([1, 1, 1]), PointN([1, 1, 1]));
-                let debug_blocks_1 =
-                    Extent3i::from_min_and_shape(PointN([2, 2, 2]), PointN([1, 1, 1]));
-                let debug_blocks_2 =
-                    Extent3i::from_min_and_shape(PointN([3, 3, 3]), PointN([1, 1, 1]));
-                let debug_blocks_3 =
-                    Extent3i::from_min_and_shape(PointN([4, 4, 4]), PointN([1, 1, 1]));
-
-                voxels.fill_extent(&debug_blocks_0, Voxel(1));
-                voxels.fill_extent(&debug_blocks_1, Voxel(2));
-                voxels.fill_extent(&debug_blocks_2, Voxel(3));
-                voxels.fill_extent(&debug_blocks_3, Voxel(4));
-
-                voxels
-            },
-            Terrain::Debug => {
-                let extent =
-                    Extent3i::from_min_and_shape(PointN([-20; 3]), PointN([40; 3])).padded(1);
-                let mut voxels = Array3::fill(extent, Voxel(0));
-
-                let debug_blocks_0 =
-                    Extent3i::from_min_and_shape(PointN([5, 2, 5]), PointN([1, 1, 1]));
-                let debug_blocks_1 =
-                    Extent3i::from_min_and_shape(PointN([7, 2, 5]), PointN([1, 1, 1]));
-                let debug_blocks_2 =
-                    Extent3i::from_min_and_shape(PointN([7, 3, 6]), PointN([1, 1, 1]));
-                let debug_blocks_3 =
-                    Extent3i::from_min_and_shape(PointN([9, 2, 5]), PointN([1, 1, 1]));
-                let debug_blocks_4 =
-                    Extent3i::from_min_and_shape(PointN([9, 3, 6]), PointN([1, 1, 1]));
-                let debug_blocks_5 =
-                    Extent3i::from_min_and_shape(PointN([10, 3, 6]), PointN([1, 1, 1]));
-                let debug_blocks_6 =
-                    Extent3i::from_min_and_shape(PointN([12, 2, 5]), PointN([1, 1, 1]));
-                let debug_blocks_7 =
-                    Extent3i::from_min_and_shape(PointN([12, 3, 6]), PointN([1, 1, 1]));
-                let debug_blocks_8 =
-                    Extent3i::from_min_and_shape(PointN([13, 3, 6]), PointN([1, 1, 1]));
-                let debug_blocks_9 =
-                    Extent3i::from_min_and_shape(PointN([13, 3, 5]), PointN([1, 1, 1]));
-                voxels.fill_extent(&debug_blocks_0, Voxel(1));
-                voxels.fill_extent(&debug_blocks_1, Voxel(1));
-                voxels.fill_extent(&debug_blocks_2, Voxel(1));
-                voxels.fill_extent(&debug_blocks_3, Voxel(1));
-                voxels.fill_extent(&debug_blocks_4, Voxel(1));
-                voxels.fill_extent(&debug_blocks_5, Voxel(1));
-                voxels.fill_extent(&debug_blocks_6, Voxel(1));
-                voxels.fill_extent(&debug_blocks_7, Voxel(1));
-                voxels.fill_extent(&debug_blocks_8, Voxel(1));
-                voxels.fill_extent(&debug_blocks_9, Voxel(1));
-                voxels
-            }
-        }
-    }
-}
 
 type VoxelMaterial = u8;
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -229,8 +158,9 @@ pub fn init_voxel_generator_system(
     mut materials: ResMut<Assets<MyMaterial>>,
     mut textures: ResMut<Assets<Texture>>,
     mut render_graph: ResMut<RenderGraph>,
+    mut handles: ResMut<VoxelRenderHandles>,
 ) {
-    commands.insert_resource(MeshGeneratorState::new());
+    //commands.insert_resource(MeshGeneratorState::new());
 
     asset_server.watch_for_changes().unwrap();
     // Create a new shader pipeline
@@ -250,22 +180,27 @@ pub fn init_voxel_generator_system(
         .add_node_edge("voxel_material", base::node::MAIN_PASS)
         .unwrap();
 
-    let texture_handle = asset_server.load("../assets/textures/terrain.png");
+    //let texture_handle = asset_server.load("../assets/textures/terrain.png");
     // Create a new material
     let material_handle = materials.add(MyMaterial {
         albedo: Color::rgb(1.0, 1.0, 1.0),
-        albedo_texture: Some(texture_handle.clone()),
+        albedo_texture: Some(handles.loading_texture.clone()),
         custom_val: 0.0,
         shaded: true,
     });
 
-    // Start loading the texture.
-    commands.insert_resource(VoxelRenderHandles {
-        loading_texture: texture_handle,
-        material: Some(material_handle.clone()),
-        pipeline: pipeline_handle,
-    });
+    let texture = textures.get_mut(handles.loading_texture.clone()).unwrap();
 
+    texture.sampler.address_mode_u = AddressMode::Repeat;
+    texture.sampler.address_mode_v = AddressMode::Repeat;
+    texture.sampler.address_mode_w = AddressMode::Repeat;
+
+    // Create a new array texture asset from the loaded texture.
+    let array_layers = NUM_BLOCKS + 1;
+    texture.reinterpret_stacked_2d_as_array(array_layers);
+
+    handles.material = Some(material_handle.clone());
+    handles.pipeline = pipeline_handle;
 }
 
 const NUM_BLOCKS: u32 = 4;
@@ -290,22 +225,6 @@ pub fn voxel_generator_system(
         for entity in state.chunk_mesh_entities.drain(..) {
             commands.despawn(entity);
         }
-
-        let texture = if let Some(texture) = textures.get_mut(assets.loading_texture.clone()) {
-            println!("Succeed!");
-            texture
-        } else {
-            println!("Fail!");
-            return;
-        };
-
-        texture.sampler.address_mode_u = AddressMode::Repeat;
-        texture.sampler.address_mode_v = AddressMode::Repeat;
-        texture.sampler.address_mode_w = AddressMode::Repeat;
-
-        // Create a new array texture asset from the loaded texture.
-        let array_layers = NUM_BLOCKS + 1;
-        texture.reinterpret_stacked_2d_as_array(array_layers);
 
         let (voxel_material_handle, _material) = match assets.material.as_ref() {
             Some(handle) => {
@@ -469,6 +388,104 @@ fn generate_chunk_meshes(voxel_generation: Terrain, pool: &TaskPool) -> Vec<Opti
             })
         }
     })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Terrain {
+    Natural,
+    AllBlocks,
+    Debug,
+}
+
+impl Terrain {
+    fn get_voxels(&self) -> Array3<Voxel> {
+        match self {
+            Terrain::Natural => {
+                let mut rng = rand::thread_rng();
+                let rand_seed: u32 = rng.gen();
+                let noise = RidgedMulti::new()
+                    .set_seed(rand_seed)
+                    .set_frequency(0.008)
+                    .set_octaves(5);
+                let yoffset = SEA_LEVEL;
+                let yscale = TERRAIN_Y_SCALE * yoffset;
+
+                let extent =
+                    Extent3i::from_min_and_shape(PointN([-20; 3]), PointN([40; 3])).padded(1);
+                let mut voxels = Array3::fill(extent, Voxel(0));
+                for z in 0..40 {
+                    for x in 0..40 {
+                        let max_y =
+                            (noise.get([x as f64, z as f64]) * yscale + yoffset).round() as i32;
+                        let level =
+                            Extent3i::from_min_and_shape(PointN([x, 0, z]), PointN([1, max_y, 1]));
+                        let vox_material = rng.gen_range(1, 5) as VoxelMaterial;
+                        voxels.fill_extent(&level, Voxel(vox_material));
+                    }
+                }
+
+                voxels
+            },
+            Terrain::AllBlocks => {
+                let extent =
+                    Extent3i::from_min_and_shape(PointN([-20; 3]), PointN([40; 3])).padded(1);
+                let mut voxels = Array3::fill(extent, Voxel(0));
+
+                let debug_blocks_0 =
+                    Extent3i::from_min_and_shape(PointN([1, 1, 1]), PointN([1, 1, 1]));
+                let debug_blocks_1 =
+                    Extent3i::from_min_and_shape(PointN([2, 2, 2]), PointN([1, 1, 1]));
+                let debug_blocks_2 =
+                    Extent3i::from_min_and_shape(PointN([3, 3, 3]), PointN([1, 1, 1]));
+                let debug_blocks_3 =
+                    Extent3i::from_min_and_shape(PointN([4, 4, 4]), PointN([1, 1, 1]));
+
+                voxels.fill_extent(&debug_blocks_0, Voxel(1));
+                voxels.fill_extent(&debug_blocks_1, Voxel(2));
+                voxels.fill_extent(&debug_blocks_2, Voxel(3));
+                voxels.fill_extent(&debug_blocks_3, Voxel(4));
+
+                voxels
+            },
+            Terrain::Debug => {
+                let extent =
+                    Extent3i::from_min_and_shape(PointN([-20; 3]), PointN([40; 3])).padded(1);
+                let mut voxels = Array3::fill(extent, Voxel(0));
+
+                let debug_blocks_0 =
+                    Extent3i::from_min_and_shape(PointN([5, 2, 5]), PointN([1, 1, 1]));
+                let debug_blocks_1 =
+                    Extent3i::from_min_and_shape(PointN([7, 2, 5]), PointN([1, 1, 1]));
+                let debug_blocks_2 =
+                    Extent3i::from_min_and_shape(PointN([7, 3, 6]), PointN([1, 1, 1]));
+                let debug_blocks_3 =
+                    Extent3i::from_min_and_shape(PointN([9, 2, 5]), PointN([1, 1, 1]));
+                let debug_blocks_4 =
+                    Extent3i::from_min_and_shape(PointN([9, 3, 6]), PointN([1, 1, 1]));
+                let debug_blocks_5 =
+                    Extent3i::from_min_and_shape(PointN([10, 3, 6]), PointN([1, 1, 1]));
+                let debug_blocks_6 =
+                    Extent3i::from_min_and_shape(PointN([12, 2, 5]), PointN([1, 1, 1]));
+                let debug_blocks_7 =
+                    Extent3i::from_min_and_shape(PointN([12, 3, 6]), PointN([1, 1, 1]));
+                let debug_blocks_8 =
+                    Extent3i::from_min_and_shape(PointN([13, 3, 6]), PointN([1, 1, 1]));
+                let debug_blocks_9 =
+                    Extent3i::from_min_and_shape(PointN([13, 3, 5]), PointN([1, 1, 1]));
+                voxels.fill_extent(&debug_blocks_0, Voxel(1));
+                voxels.fill_extent(&debug_blocks_1, Voxel(1));
+                voxels.fill_extent(&debug_blocks_2, Voxel(1));
+                voxels.fill_extent(&debug_blocks_3, Voxel(1));
+                voxels.fill_extent(&debug_blocks_4, Voxel(1));
+                voxels.fill_extent(&debug_blocks_5, Voxel(1));
+                voxels.fill_extent(&debug_blocks_6, Voxel(1));
+                voxels.fill_extent(&debug_blocks_7, Voxel(1));
+                voxels.fill_extent(&debug_blocks_8, Voxel(1));
+                voxels.fill_extent(&debug_blocks_9, Voxel(1));
+                voxels
+            }
+        }
+    }
 }
 
 fn get_ao_at_vert(v: Point3f, padded_chunk: &ArrayN<[i32; 3], Voxel>, padded_chunk_extent: &Extent3i) -> i32
@@ -661,7 +678,7 @@ fn extent_modulo_expand(extent: Extent3i, modulo: i32) -> Extent3i {
     )
 }
 
-fn process_chunk_quads(buffer: GreedyQuadsBuffer<VoxelMaterial>, padded_chunk: &ArrayN<[i32; 3], Voxel>, padded_chunk_extent: &Extent3i) -> Option<ChunkMeshData> {
+fn process_quad_buffer(buffer: GreedyQuadsBuffer<VoxelMaterial>, padded_chunk: &ArrayN<[i32; 3], Voxel>, padded_chunk_extent: &Extent3i) -> Option<ChunkMeshData> {
     let mut vert_vox_mat_vals: Vec<f32> = Vec::new();
     let mut vert_ao_vals: Vec<f32> = Vec::new();
 
@@ -708,7 +725,7 @@ fn spawn_mesh(
     let mut quads = GreedyQuadsBuffer::new(extent_padded);
     greedy_quads(&map, &extent_padded, &mut quads);
 
-    let mesh_data = process_chunk_quads(quads, &map, &extent_padded).unwrap();
+    let mesh_data = process_quad_buffer(quads, &map, &extent_padded).unwrap();
 
     let mut render_mesh = Mesh::new(PrimitiveTopology::TriangleList);
     render_mesh.set_attribute(
