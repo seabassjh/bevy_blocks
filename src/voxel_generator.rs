@@ -21,6 +21,17 @@ use bevy::{
     tasks::{ComputeTaskPool, TaskPool},
 };
 
+pub struct VoxelGeneratorPlugin;
+
+impl Plugin for VoxelGeneratorPlugin {
+    fn build(&self, builder: &mut AppBuilder) {
+        builder
+            .add_asset::<MyMaterial>()
+            .add_startup_system(init_voxel_generator_system.system())
+            .add_system(voxel_generator_system.system());
+    }
+}
+
 pub struct MeshGeneratorState {
     chunk_mesh_entities: Vec<Entity>,
 }
@@ -219,6 +230,8 @@ pub fn init_voxel_generator_system(
     mut textures: ResMut<Assets<Texture>>,
     mut render_graph: ResMut<RenderGraph>,
 ) {
+    commands.insert_resource(MeshGeneratorState::new());
+
     asset_server.watch_for_changes().unwrap();
     // Create a new shader pipeline
     let pipeline_handle = pipelines.add(PipelineDescriptor::default_config(ShaderStages {
