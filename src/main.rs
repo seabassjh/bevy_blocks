@@ -2,7 +2,7 @@ mod first_person_controller;
 mod voxel_generator;
 
 use bevy::{prelude::*};
-use first_person_controller::ThirdPersonControllerPlugin;
+use first_person_controller::FirstPersonControllerPlugin;
 use voxel_generator::{
     VoxelGeneratorPlugin,
 };
@@ -21,7 +21,7 @@ fn main() {
         .add_resource(ClearColor(Color::rgb(0.4, 0.8, 1.0)))
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup.system())
-        .add_plugin(ThirdPersonControllerPlugin)
+        .add_plugin(FirstPersonControllerPlugin)
         .add_plugin(VoxelGeneratorPlugin)
         .run();
 }

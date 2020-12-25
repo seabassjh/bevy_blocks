@@ -20,8 +20,9 @@ const STAGE: &str = "app_state";
 
 #[derive(Clone)]
 enum PluginState {
-    Setup,
-    Finshed,
+    PreInit,
+    Init,
+    Finished,
 }
 
 pub struct VoxelGeneratorPlugin;
@@ -30,31 +31,44 @@ impl Plugin for VoxelGeneratorPlugin {
     fn build(&self, builder: &mut AppBuilder) {
         builder
             .add_asset::<MyMaterial>()
-            .add_resource(State::new(PluginState::Setup))
+            .add_resource(State::new(PluginState::PreInit))
             .add_resource(MeshGeneratorState::new())
-            .init_resource::<VoxelRenderHandles>()
+            .add_resource(GeneratedVoxelResource::default())
+            .add_resource(GeneratedMeshesResource::default())
+            .init_resource::<VoxelAssetHandles>()
             .add_stage_after(stage::UPDATE, STAGE, StateStage::<PluginState>::default())
-            .on_state_enter(STAGE, PluginState::Setup, load_textures.system())
-            .on_state_update(STAGE, PluginState::Setup, check_textures.system())
-            .on_state_enter(STAGE, PluginState::Finshed, init_voxel_generator_system.system())
-            .add_system(voxel_generator_system.system());
-
+            .on_state_enter(STAGE, PluginState::PreInit, load_assets.system())
+            .on_state_update(STAGE, PluginState::PreInit, check_assets.system())
+            .on_state_enter(STAGE, PluginState::Init, init_voxel_generator_system.system())
+            //.on_state_enter(STAGE, PluginState::Finished, voxel_generator_system.system())
+            .on_state_enter(STAGE, PluginState::Finished, generate_voxels.system())
+            .on_state_enter(STAGE, PluginState::Finished, generate_meshes.system());
     }
 }
 
-fn load_textures(mut handles: ResMut<VoxelRenderHandles>, asset_server: Res<AssetServer>) {
-    handles.loading_texture = asset_server.load("../assets/textures/terrain.png");
+fn load_assets(mut handles: ResMut<VoxelAssetHandles>, asset_server: Res<AssetServer>) {
+    let texture: Handle<Texture> = asset_server.load("../assets/textures/terrain.png");
+    handles.vec.push(texture.clone_untyped());
+    handles.texture = texture;
+
+    let vert_shader = asset_server.load::<Shader, _>(VERTEX_SHADER);
+    handles.vec.push(vert_shader.clone_untyped());
+    handles.vert_shader = vert_shader;
+
+    let frag_shader = asset_server.load::<Shader, _>(FRAGMENT_SHADER);
+    handles.vec.push(frag_shader.clone_untyped());
+    handles.frag_shader = frag_shader;
 }
 
-fn check_textures(
+fn check_assets(
     mut state: ResMut<State<PluginState>>,
-    handles: ResMut<VoxelRenderHandles>,
+    handles: ResMut<VoxelAssetHandles>,
     asset_server: Res<AssetServer>,
 ) {
     if let LoadState::Loaded =
-        asset_server.get_load_state(handles.loading_texture.clone())
+        asset_server.get_group_load_state(handles.vec.iter().map(|handle| handle.id))
     {
-        state.set_next(PluginState::Finshed).unwrap();
+        state.set_next(PluginState::Init).unwrap();
     }
 }
 
@@ -71,10 +85,13 @@ impl MeshGeneratorState {
 }
 
 #[derive(Default)]
-pub struct VoxelRenderHandles {
-    loading_texture: Handle<Texture>,
-    material: Option<Handle<MyMaterial>>,
+pub struct VoxelAssetHandles {
+    vert_shader: Handle<Shader>,
+    frag_shader: Handle<Shader>,
+    texture: Handle<Texture>,
+    material: Handle<MyMaterial>,
     pipeline: Handle<PipelineDescriptor>,
+    vec: Vec<HandleUntyped>,
 }
 
 type VoxelMap = ChunkHashMap<[i32; 3], Voxel, ()>;
@@ -151,22 +168,23 @@ pub struct MyMaterial {
 const FRAGMENT_SHADER: &str = "../assets/shaders/voxel.frag";
 const VERTEX_SHADER: &str = "../assets/shaders/voxel.vert";
 
-pub fn init_voxel_generator_system(
-    commands: &mut Commands,
+fn init_voxel_generator_system(
+    _commands: &mut Commands,
+    mut state: ResMut<State<PluginState>>,
     asset_server: ResMut<AssetServer>,
     mut pipelines: ResMut<Assets<PipelineDescriptor>>,
     mut materials: ResMut<Assets<MyMaterial>>,
     mut textures: ResMut<Assets<Texture>>,
     mut render_graph: ResMut<RenderGraph>,
-    mut handles: ResMut<VoxelRenderHandles>,
+    mut handles: ResMut<VoxelAssetHandles>,
 ) {
-    //commands.insert_resource(MeshGeneratorState::new());
-
+    // Enable hot relaoding for assets
     asset_server.watch_for_changes().unwrap();
+
     // Create a new shader pipeline
     let pipeline_handle = pipelines.add(PipelineDescriptor::default_config(ShaderStages {
-        vertex: asset_server.load::<Shader, _>(VERTEX_SHADER),
-        fragment: Some(asset_server.load::<Shader, _>(FRAGMENT_SHADER)),
+        vertex: handles.vert_shader.clone(),
+        fragment: Some(handles.frag_shader.clone()),
     }));
 
     // Add an AssetRenderResourcesNode to our Render Graph. This will bind MyMaterial resources to our shader
@@ -184,12 +202,12 @@ pub fn init_voxel_generator_system(
     // Create a new material
     let material_handle = materials.add(MyMaterial {
         albedo: Color::rgb(1.0, 1.0, 1.0),
-        albedo_texture: Some(handles.loading_texture.clone()),
+        albedo_texture: Some(handles.texture.clone()),
         custom_val: 0.0,
         shaded: true,
     });
 
-    let texture = textures.get_mut(handles.loading_texture.clone()).unwrap();
+    let texture = textures.get_mut(handles.texture.clone()).unwrap();
 
     texture.sampler.address_mode_u = AddressMode::Repeat;
     texture.sampler.address_mode_v = AddressMode::Repeat;
@@ -199,8 +217,10 @@ pub fn init_voxel_generator_system(
     let array_layers = NUM_BLOCKS + 1;
     texture.reinterpret_stacked_2d_as_array(array_layers);
 
-    handles.material = Some(material_handle.clone());
+    handles.material = material_handle.clone();
     handles.pipeline = pipeline_handle;
+
+    state.set_next(PluginState::Finished).unwrap();
 }
 
 const NUM_BLOCKS: u32 = 4;
@@ -211,7 +231,7 @@ pub fn post_init_voxel_generator_system() {
 
 pub fn voxel_generator_system(
     commands: &mut Commands,
-    mut assets: ResMut<VoxelRenderHandles>,
+    mut assets: ResMut<VoxelAssetHandles>,
     mut textures: ResMut<Assets<Texture>>,
     pool: Res<ComputeTaskPool>,
     mut state: ResMut<MeshGeneratorState>,
@@ -226,17 +246,8 @@ pub fn voxel_generator_system(
             commands.despawn(entity);
         }
 
-        let (voxel_material_handle, _material) = match assets.material.as_ref() {
-            Some(handle) => {
-                if let Some(material) = voxel_materials.get_mut(handle) {
-                    (assets.material.take().unwrap(), material)
-                } else {
-                    return;
-                }
-            }
-            None => return,
-        };
-
+        let voxel_material_handle = assets.material.clone();
+        
         let render_pipelines =
             RenderPipelines::from_pipelines(vec![RenderPipeline::new(assets.pipeline.clone())]);
 
@@ -598,7 +609,7 @@ fn generate_chunk(res: &mut ResMut<GeneratedVoxelResource>, min: Point3i, max: P
         }
     }
 }
-
+#[derive(Bundle)]
 pub struct GeneratedVoxelsTag;
 
 struct GeneratedMeshesResource {
@@ -616,9 +627,9 @@ impl Default for GeneratedMeshesResource {
 fn generate_voxels(
     mut voxels: ResMut<GeneratedVoxelResource>,
     voxel_meshes: Res<GeneratedMeshesResource>,
-    _cam: &GeneratedVoxelsTag,
-    cam_transform: &Transform,
+    query: Query<&Transform, With<GeneratedVoxelsTag>>,
 ) {
+    let cam_transform = query.iter().next().expect("Failed to get camera transform");
     let cam_pos = cam_transform.translation;
     let cam_pos = PointN([cam_pos.x.round() as i32, 0i32, cam_pos.z.round() as i32]);
 
@@ -681,14 +692,12 @@ fn extent_modulo_expand(extent: Extent3i, modulo: i32) -> Extent3i {
 fn process_quad_buffer(buffer: GreedyQuadsBuffer<VoxelMaterial>, padded_chunk: &ArrayN<[i32; 3], Voxel>, padded_chunk_extent: &Extent3i) -> Option<ChunkMeshData> {
     let mut vert_vox_mat_vals: Vec<f32> = Vec::new();
     let mut vert_ao_vals: Vec<f32> = Vec::new();
-
     let mut mesh = PosNormTexMesh::default();
     for group in buffer.quad_groups.iter() {
         for (quad, material) in group.quads.iter() {
             for v in group.face.quad_corners(quad).iter() {
-                
                 let v_ao =
-                    get_ao_at_vert(*v, padded_chunk, padded_chunk_extent) as f32;
+                   get_ao_at_vert(*v, padded_chunk, padded_chunk_extent) as f32;
                 vert_ao_vals.extend_from_slice(&[v_ao]);
             }
 
@@ -717,7 +726,7 @@ fn spawn_mesh(
     voxel_material: Handle<MyMaterial>,
     voxel_map: &VoxelMap,
     extent: Extent3i,
-    pipelines: RenderPipelines,
+    pipelines: &RenderPipelines,
 ) -> (Entity, Handle<Mesh>) {
     let extent_padded = extent.padded(1);
     let mut map = Array3::fill(extent_padded, Voxel(0));
@@ -759,7 +768,7 @@ fn spawn_mesh(
     let entity = commands
         .spawn(MeshBundle {
             mesh: mesh.clone(),
-            render_pipelines: pipelines,
+            render_pipelines: pipelines.to_owned(),
             transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
             ..Default::default()
         })
@@ -770,16 +779,19 @@ fn spawn_mesh(
 }
 
 fn generate_meshes(
-    mut commands: Commands,
+    mut commands: &mut Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    voxels: ChangedRes<GeneratedVoxelResource>,
+    mut voxels: ChangedRes<GeneratedVoxelResource>,
     mut voxel_meshes: ResMut<GeneratedMeshesResource>,
-    _cam: &GeneratedVoxelsTag,
-    cam_transform: &Transform,
-    mut assets: ResMut<VoxelRenderHandles>,
+    query: Query<&Transform, With<GeneratedVoxelsTag>>,
+    mut assets: ResMut<VoxelAssetHandles>,
 ) {
+    let cam_transform = query.iter().next().expect("Failed to get camera transform");
     let cam_pos = cam_transform.translation;
     let cam_pos = PointN([cam_pos.x.round() as i32, 0i32, cam_pos.z.round() as i32]);
+
+    let pipelines = 
+        RenderPipelines::from_pipelines(vec![RenderPipeline::new(assets.pipeline.clone())]);
 
     let view_distance = voxels.view_distance;
     let chunk_size = voxels.chunk_size;
@@ -805,10 +817,10 @@ fn generate_meshes(
             let entity_mesh = spawn_mesh(
                 &mut commands,
                 &mut meshes,
-                assets.material.take().unwrap(),
+                assets.material.clone(),
                 &voxels.map,
                 Extent3i::from_min_and_shape(p, PointN([chunk_size, max_height, chunk_size])),
-                RenderPipelines::from_pipelines(vec![RenderPipeline::new(assets.pipeline.clone())]),
+                &pipelines,
             );
             voxel_meshes.generated_map.insert(p, entity_mesh);
         }

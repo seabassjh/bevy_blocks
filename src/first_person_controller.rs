@@ -1,9 +1,12 @@
 use bevy::input::mouse::*;
 use bevy::prelude::*;
+use crate::voxel_generator::{
+    GeneratedVoxelsTag,
+};
 
-pub struct ThirdPersonControllerPlugin;
+pub struct FirstPersonControllerPlugin;
 
-impl Plugin for ThirdPersonControllerPlugin {
+impl Plugin for FirstPersonControllerPlugin {
     fn build(&self, builder: &mut AppBuilder) {
         builder
             .add_startup_system(setup.system())
@@ -34,7 +37,8 @@ fn setup(commands: &mut Commands, mut windows: ResMut<Windows>) {
             },
             ..Default::default()
         })
-        .with(player_controller);
+        .with(player_controller)
+        .with(GeneratedVoxelsTag);
 
     commands.insert_resource(FPPlayerControllerState::new());
 
@@ -69,7 +73,7 @@ pub struct FPPlayerControllerState {
 impl FPPlayerControllerState {
     pub fn new() -> Self {
         Self {
-            cursor_locked: true,
+            cursor_locked: false,
         }
     }
 }
