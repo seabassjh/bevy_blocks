@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::BuildHasherDefault};
+use std::{collections::{HashMap, HashSet}, hash::BuildHasherDefault};
 
 //use super::voxel_texturing::{FRAGMENT_SHADER, VERTEX_SHADER};
 use building_blocks::{core::prelude::*, storage::ChunkHashMap};
@@ -34,7 +34,7 @@ impl MeshGeneratorState {
 }
 
 pub struct VoxelRenderHandles {
-    loading_texture: Option<Handle<Texture>>,
+    loading_texture: Handle<Texture>,
     material: Option<Handle<MyMaterial>>,
     pipeline: Handle<PipelineDescriptor>,
 }
@@ -53,7 +53,7 @@ struct GeneratedVoxelResource {
 impl Default for GeneratedVoxelResource {
     fn default() -> Self {        
 
-        let builder: ChunkMapBuilder<[i32; 3], Voxel, ()> = ChunkMapBuilder {
+        let builder = ChunkMapBuilder {
             chunk_shape: PointN([CHUNK_SIZE; 3]),
             ambient_value: Voxel(0),
             default_chunk_metadata: (),
@@ -211,11 +211,12 @@ pub struct MyMaterial {
 const FRAGMENT_SHADER: &str = "../assets/shaders/voxel.frag";
 const VERTEX_SHADER: &str = "../assets/shaders/voxel.vert";
 
-pub fn setup_voxel_generator_system(
+pub fn init_voxel_generator_system(
     commands: &mut Commands,
     asset_server: ResMut<AssetServer>,
     mut pipelines: ResMut<Assets<PipelineDescriptor>>,
     mut materials: ResMut<Assets<MyMaterial>>,
+    mut textures: ResMut<Assets<Texture>>,
     mut render_graph: ResMut<RenderGraph>,
 ) {
     asset_server.watch_for_changes().unwrap();
@@ -247,13 +248,18 @@ pub fn setup_voxel_generator_system(
 
     // Start loading the texture.
     commands.insert_resource(VoxelRenderHandles {
-        loading_texture: Some(texture_handle.clone()),
+        loading_texture: texture_handle,
         material: Some(material_handle.clone()),
         pipeline: pipeline_handle,
     });
+
 }
 
 const NUM_BLOCKS: u32 = 4;
+
+pub fn post_init_voxel_generator_system() {
+
+}
 
 pub fn voxel_generator_system(
     commands: &mut Commands,
@@ -272,15 +278,12 @@ pub fn voxel_generator_system(
             commands.despawn(entity);
         }
 
-        let (_texture_handle, texture) = match assets.loading_texture.as_ref() {
-            Some(handle) => {
-                if let Some(texture) = textures.get_mut(handle) {
-                    (assets.loading_texture.take().unwrap(), texture)
-                } else {
-                    return;
-                }
-            }
-            None => return,
+        let texture = if let Some(texture) = textures.get_mut(assets.loading_texture.clone()) {
+            println!("Succeed!");
+            texture
+        } else {
+            println!("Fail!");
+            return;
         };
 
         texture.sampler.address_mode_u = AddressMode::Repeat;
@@ -549,5 +552,241 @@ fn get_ao_at_vert(v: Point3f, padded_chunk: &ArrayN<[i32; 3], Voxel>, padded_chu
 		return 3;
     } else {
         return side0 as i32 + side1 as i32 + corner as i32
+    }
+}
+
+fn generate_chunk(res: &mut ResMut<GeneratedVoxelResource>, min: Point3i, max: Point3i) {
+    let yoffset = SEA_LEVEL;
+    let yscale = TERRAIN_Y_SCALE * yoffset;
+    for z in min.z()..max.z() {
+        for x in min.x()..max.x() {
+            let max_y = (res.noise.get([x as f64, z as f64]) * yscale + yoffset).round() as i32;
+            for y in 0..(max_y + 1) {
+                let (_p, v) = res.map.get_mut_point_and_chunk_key(&PointN([x, y, z]));
+                *v = Voxel(1);
+            }
+        }
+    }
+}
+
+pub struct GeneratedVoxelsTag;
+
+struct GeneratedMeshesResource {
+    pub generated_map: HashMap<Point3i, (Entity, Handle<Mesh>)>,
+}
+
+impl Default for GeneratedMeshesResource {
+    fn default() -> Self {
+        GeneratedMeshesResource {
+            generated_map: HashMap::new(),
+        }
+    }
+}
+
+fn generate_voxels(
+    mut voxels: ResMut<GeneratedVoxelResource>,
+    voxel_meshes: Res<GeneratedMeshesResource>,
+    _cam: &GeneratedVoxelsTag,
+    cam_transform: &Transform,
+) {
+    let cam_pos = cam_transform.translation;
+    let cam_pos = PointN([cam_pos.x.round() as i32, 0i32, cam_pos.z.round() as i32]);
+
+    let extent = transform_to_extent(cam_pos, voxels.view_distance);
+    let extent = extent_modulo_expand(extent, voxels.chunk_size);
+    let min = extent.minimum;
+    let max = extent.least_upper_bound();
+
+    let chunk_size = voxels.chunk_size;
+    let max_height = voxels.max_height;
+    let vd2 = voxels.view_distance * voxels.view_distance;
+    for z in (min.z()..max.z()).step_by(voxels.chunk_size as usize) {
+        for x in (min.x()..max.x()).step_by(voxels.chunk_size as usize) {
+            let p = PointN([x, 0, z]);
+            let d = p - cam_pos;
+            if voxel_meshes.generated_map.get(&p).is_some() || d.dot(&d) > vd2 {
+                continue;
+            }
+            generate_chunk(
+                &mut voxels,
+                PointN([x, 0, z]),
+                PointN([x + chunk_size, max_height, z + chunk_size]),
+            );
+        }
+    }
+}
+
+fn modulo_down(v: i32, modulo: i32) -> i32 {
+    (v / modulo) * modulo
+}
+
+fn modulo_up(v: i32, modulo: i32) -> i32 {
+    ((v / modulo) + 1) * modulo
+}
+
+fn transform_to_extent(cam_pos: Point3i, view_distance: i32) -> Extent3i {
+    Extent3i::from_min_and_lub(
+        PointN([cam_pos.x() - view_distance, 0, cam_pos.z() - view_distance]),
+        PointN([cam_pos.x() + view_distance, 0, cam_pos.z() + view_distance]),
+    )
+}
+
+fn extent_modulo_expand(extent: Extent3i, modulo: i32) -> Extent3i {
+    let min = extent.minimum;
+    let max = extent.least_upper_bound();
+    Extent3i::from_min_and_lub(
+        PointN([
+            modulo_down(min.x(), modulo),
+            min.y(),
+            modulo_down(min.z(), modulo),
+        ]),
+        PointN([
+            modulo_up(max.x(), modulo) + 1,
+            max.y() + 1,
+            modulo_up(max.z(), modulo) + 1,
+        ]),
+    )
+}
+
+fn process_chunk_quads(buffer: GreedyQuadsBuffer<VoxelMaterial>, padded_chunk: &ArrayN<[i32; 3], Voxel>, padded_chunk_extent: &Extent3i) -> Option<ChunkMeshData> {
+    let mut vert_vox_mat_vals: Vec<f32> = Vec::new();
+    let mut vert_ao_vals: Vec<f32> = Vec::new();
+
+    let mut mesh = PosNormTexMesh::default();
+    for group in buffer.quad_groups.iter() {
+        for (quad, material) in group.quads.iter() {
+            for v in group.face.quad_corners(quad).iter() {
+                
+                let v_ao =
+                    get_ao_at_vert(*v, padded_chunk, padded_chunk_extent) as f32;
+                vert_ao_vals.extend_from_slice(&[v_ao]);
+            }
+
+            group.face.add_quad_to_pos_norm_tex_mesh(&quad, &mut mesh);
+            let voxel_mat = *material as f32;
+            vert_vox_mat_vals
+                .extend_from_slice(&[voxel_mat, voxel_mat, voxel_mat, voxel_mat]);
+        }
+    }
+
+    if mesh.is_empty() {
+        None
+    } else {
+        Some(ChunkMeshData {
+            pos_norm_tex_mesh: mesh,
+            vert_vox_mat_vals,
+            vert_ao_vals,
+        })
+    }
+}
+// let mut chunk_map = builder.build(CompressibleChunkStorage::new(Lz4 { level: 10 }));
+// let reader = chunk_map.storage().reader(&local_cache);
+fn spawn_mesh(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    voxel_material: Handle<MyMaterial>,
+    voxel_map: &VoxelMap,
+    extent: Extent3i,
+    pipelines: RenderPipelines,
+) -> (Entity, Handle<Mesh>) {
+    let extent_padded = extent.padded(1);
+    let mut map = Array3::fill(extent_padded, Voxel(0));
+    copy_extent(&extent_padded, voxel_map, &mut map);
+    let mut quads = GreedyQuadsBuffer::new(extent_padded);
+    greedy_quads(&map, &extent_padded, &mut quads);
+
+    let mesh_data = process_chunk_quads(quads, &map, &extent_padded).unwrap();
+
+    let mut render_mesh = Mesh::new(PrimitiveTopology::TriangleList);
+    render_mesh.set_attribute(
+        Mesh::ATTRIBUTE_POSITION,
+        VertexAttributeValues::Float3(mesh_data.pos_norm_tex_mesh.positions),
+    );
+    render_mesh.set_attribute(
+        Mesh::ATTRIBUTE_NORMAL,
+        VertexAttributeValues::Float3(mesh_data.pos_norm_tex_mesh.normals),
+    );
+    render_mesh.set_attribute(
+        Mesh::ATTRIBUTE_UV_0,
+        VertexAttributeValues::Float2(mesh_data.pos_norm_tex_mesh.tex_coords),
+    );
+    render_mesh.set_attribute(
+        "Vertex_Voxel_Material",
+        VertexAttributeValues::Float(mesh_data.vert_vox_mat_vals),
+    );
+
+    render_mesh.set_attribute(
+        "Vertex_AO",
+        VertexAttributeValues::Float(mesh_data.vert_ao_vals),
+    );
+
+    render_mesh.set_indices(Some(Indices::U32(
+        mesh_data.pos_norm_tex_mesh.indices.iter().map(|i| *i as u32).collect(),
+    )));
+
+    let mesh = meshes.add(render_mesh);
+
+    let entity = commands
+        .spawn(MeshBundle {
+            mesh: mesh.clone(),
+            render_pipelines: pipelines,
+            transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+            ..Default::default()
+        })
+        .with(voxel_material)
+        .current_entity()
+        .unwrap();
+    (entity, mesh)
+}
+
+fn generate_meshes(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    voxels: ChangedRes<GeneratedVoxelResource>,
+    mut voxel_meshes: ResMut<GeneratedMeshesResource>,
+    _cam: &GeneratedVoxelsTag,
+    cam_transform: &Transform,
+    mut assets: ResMut<VoxelRenderHandles>,
+) {
+    let cam_pos = cam_transform.translation;
+    let cam_pos = PointN([cam_pos.x.round() as i32, 0i32, cam_pos.z.round() as i32]);
+
+    let view_distance = voxels.view_distance;
+    let chunk_size = voxels.chunk_size;
+    let extent = transform_to_extent(cam_pos, view_distance);
+    let extent = extent_modulo_expand(extent, chunk_size);
+    let min = extent.minimum;
+    let max = extent.least_upper_bound();
+
+    let max_height = voxels.max_height;
+    let vd2 = view_distance * view_distance;
+    let mut to_remove: HashSet<Point3i> = voxel_meshes.generated_map.keys().cloned().collect();
+    for z in (min.z()..max.z()).step_by(chunk_size as usize) {
+        for x in (min.x()..max.x()).step_by(chunk_size as usize) {
+            let p = PointN([x, 0, z]);
+            let d = p - cam_pos;
+            if d.dot(&d) > vd2 {
+                continue;
+            }
+            to_remove.remove(&p);
+            if voxel_meshes.generated_map.get(&p).is_some() {
+                continue;
+            }
+            let entity_mesh = spawn_mesh(
+                &mut commands,
+                &mut meshes,
+                assets.material.take().unwrap(),
+                &voxels.map,
+                Extent3i::from_min_and_shape(p, PointN([chunk_size, max_height, chunk_size])),
+                RenderPipelines::from_pipelines(vec![RenderPipeline::new(assets.pipeline.clone())]),
+            );
+            voxel_meshes.generated_map.insert(p, entity_mesh);
+        }
+    }
+    for p in &to_remove {
+        if let Some((entity, mesh)) = voxel_meshes.generated_map.remove(p) {
+            commands.despawn(entity);
+            meshes.remove(&mesh);
+        }
     }
 }

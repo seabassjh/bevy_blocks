@@ -4,7 +4,7 @@ mod voxel_generator;
 use bevy::{prelude::*};
 use first_person_controller::ThirdPersonControllerPlugin;
 use voxel_generator::{
-    setup_voxel_generator_system, voxel_generator_system, MeshGeneratorState, MyMaterial,
+    init_voxel_generator_system, post_init_voxel_generator_system, voxel_generator_system, MeshGeneratorState, MyMaterial,
 };
 
 fn main() {
@@ -22,7 +22,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_asset::<MyMaterial>()
         .add_startup_system(setup.system())
-        .add_startup_system(setup_voxel_generator_system.system())
+        .add_startup_system(init_voxel_generator_system.system())
         .add_plugin(ThirdPersonControllerPlugin)
         .add_system(voxel_generator_system.system())
         .run();
