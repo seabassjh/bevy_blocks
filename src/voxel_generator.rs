@@ -33,8 +33,8 @@ impl Plugin for VoxelGeneratorPlugin {
             .add_asset::<MyMaterial>()
             .add_resource(State::new(PluginState::PreInit))
             .add_resource(MeshGeneratorState::new())
-            .add_resource(GeneratedVoxelResource::default())
-            .add_resource(GeneratedMeshesResource::default())
+            .add_resource::<GeneratedVoxelResource>(GeneratedVoxelResource::default())
+            .add_resource::<GeneratedMeshesResource>(GeneratedMeshesResource::default())
             .init_resource::<VoxelAssetHandles>()
             .add_stage_after(stage::UPDATE, STAGE, StateStage::<PluginState>::default())
             .on_state_enter(STAGE, PluginState::PreInit, load_assets.system())
@@ -330,7 +330,7 @@ struct ChunkMeshData {
     vert_ao_vals: Vec<f32>,
 }
 
-const CHUNK_SIZE: i32 = 16;
+const CHUNK_SIZE: i32 = 64;
 
 fn generate_chunk_meshes(voxel_generation: Terrain, pool: &TaskPool) -> Vec<Option<ChunkMeshData>> {
     let voxels = voxel_generation.get_voxels();
@@ -362,7 +362,7 @@ fn generate_chunk_meshes(voxel_generation: Terrain, pool: &TaskPool) -> Vec<Opti
                 let mut padded_chunk = Array3::fill(padded_chunk_extent, Voxel(0));
                 copy_extent(&padded_chunk_extent, map_ref, &mut padded_chunk);
 
-                // TODO bevy: we could avoid re-allocating the buffers on every call if we had
+                // TODO bevy: we could avRoid re-allocating the buffers on every call if we had
                 // thread-local storage accessible from this task
                 let mut buffer = GreedyQuadsBuffer::new(padded_chunk_extent);
                 greedy_quads(&padded_chunk, &padded_chunk_extent, &mut buffer);
@@ -609,6 +609,7 @@ fn generate_chunk(res: &mut ResMut<GeneratedVoxelResource>, min: Point3i, max: P
         }
     }
 }
+
 #[derive(Bundle)]
 pub struct GeneratedVoxelsTag;
 
@@ -629,8 +630,8 @@ fn generate_voxels(
     voxel_meshes: Res<GeneratedMeshesResource>,
     query: Query<&Transform, With<GeneratedVoxelsTag>>,
 ) {
-    let cam_transform = query.iter().next().expect("Failed to get camera transform");
-    let cam_pos = cam_transform.translation;
+    //let cam_transform = query.iter().next().expect("Failed to get camera transform");
+    let cam_pos = Vec3::new(0.0, 0.0, 0.0); //cam_transform.translation;
     let cam_pos = PointN([cam_pos.x.round() as i32, 0i32, cam_pos.z.round() as i32]);
 
     let extent = transform_to_extent(cam_pos, voxels.view_distance);
@@ -728,11 +729,15 @@ fn spawn_mesh(
     extent: Extent3i,
     pipelines: &RenderPipelines,
 ) -> (Entity, Handle<Mesh>) {
+    println!("Mesh!");
+
     let extent_padded = extent.padded(1);
     let mut map = Array3::fill(extent_padded, Voxel(0));
     copy_extent(&extent_padded, voxel_map, &mut map);
     let mut quads = GreedyQuadsBuffer::new(extent_padded);
+    println!("Start greedy_quads");
     greedy_quads(&map, &extent_padded, &mut quads);
+    println!("End greedy_quads");
 
     let mesh_data = process_quad_buffer(quads, &map, &extent_padded).unwrap();
 
@@ -762,7 +767,7 @@ fn spawn_mesh(
     render_mesh.set_indices(Some(Indices::U32(
         mesh_data.pos_norm_tex_mesh.indices.iter().map(|i| *i as u32).collect(),
     )));
-
+    
     let mesh = meshes.add(render_mesh);
 
     let entity = commands
@@ -786,8 +791,8 @@ fn generate_meshes(
     query: Query<&Transform, With<GeneratedVoxelsTag>>,
     mut assets: ResMut<VoxelAssetHandles>,
 ) {
-    let cam_transform = query.iter().next().expect("Failed to get camera transform");
-    let cam_pos = cam_transform.translation;
+    //let cam_transform = query.iter().next().expect("Failed to get camera transform");
+    let cam_pos = Vec3::new(0.0,0.0,0.0);// cam_transform.translation;
     let cam_pos = PointN([cam_pos.x.round() as i32, 0i32, cam_pos.z.round() as i32]);
 
     let pipelines = 
