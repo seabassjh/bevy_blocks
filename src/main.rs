@@ -8,9 +8,7 @@ use voxel_terrain_generator::VoxelTerrainGeneratorPlugin;
 fn main() {
     App::build()
         .add_resource(WindowDescriptor {
-            title: "My Bevy Game".to_string(),
-            width: 1920.0,
-            height: 1080.0,
+            title: "Neveround".to_string(),
             vsync: true,
             resizable: true,
             ..Default::default()

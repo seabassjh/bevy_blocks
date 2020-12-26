@@ -25,7 +25,7 @@ fn setup(commands: &mut Commands, mut windows: ResMut<Windows>) {
     commands
         .spawn(Camera3dBundle {
             transform: Transform {
-                translation: Vec3::new(-6.0, 40.0, -6.0),
+                translation: Vec3::new(0.0, 30.0, 0.0),
                 rotation: Quat::from_rotation_ypr(
                     player_controller.yaw,
                     player_controller.pitch,
@@ -41,8 +41,8 @@ fn setup(commands: &mut Commands, mut windows: ResMut<Windows>) {
     commands.insert_resource(FPPlayerControllerState::new());
 
     let window = windows.get_primary_mut().unwrap();
-    window.set_cursor_lock_mode(true);
-    window.set_cursor_visibility(false);
+    window.set_cursor_lock_mode(false);
+    window.set_cursor_visibility(true);
 }
 
 #[derive(Bundle)]

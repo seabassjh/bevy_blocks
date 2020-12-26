@@ -25,14 +25,14 @@ layout(set = 1, binding = 0) uniform Lights {
     Light SceneLights[MAX_LIGHTS];
 };
 
-layout(set = 3, binding = 0) uniform MyMaterial_albedo {
+layout(set = 3, binding = 0) uniform TerrainMaterial_albedo {
     vec4 Albedo;
 };
 
-layout(set = 3, binding = 1) uniform texture2DArray MyMaterial_albedo_texture;
-layout(set = 3, binding = 2) uniform sampler MyMaterial_albedo_texture_sampler;
+layout(set = 3, binding = 1) uniform texture2DArray TerrainMaterial_albedo_texture;
+layout(set = 3, binding = 2) uniform sampler TerrainMaterial_albedo_texture_sampler;
 
-layout(set = 3, binding = 3) uniform MyMaterial_custom_val {
+layout(set = 3, binding = 3) uniform TerrainMaterial_custom_val {
     float custom_val;
 };
 
@@ -42,7 +42,7 @@ void main() {
     //output_color = Albedo; // Disables AO
     
     output_color *= texture(
-        sampler2DArray(MyMaterial_albedo_texture, MyMaterial_albedo_texture_sampler),
+        sampler2DArray(TerrainMaterial_albedo_texture, TerrainMaterial_albedo_texture_sampler),
         vec3(v_Uv, v_Vox_Mat));
 
     output_color *= vec4(vec3(v_Vox_Mat), 1.0);

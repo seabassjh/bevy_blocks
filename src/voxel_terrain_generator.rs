@@ -35,7 +35,7 @@ pub struct VoxelTerrainGeneratorPlugin;
 impl Plugin for VoxelTerrainGeneratorPlugin {
     fn build(&self, builder: &mut AppBuilder) {
         builder
-            .add_asset::<MyMaterial>()
+            .add_asset::<TerrainMaterial>()
             .add_resource(State::new(PluginState::PreInit))
             .add_resource(MeshGeneratorState::new())
             .add_resource::<GeneratedVoxelResource>(GeneratedVoxelResource::default())
@@ -60,15 +60,19 @@ impl Plugin for VoxelTerrainGeneratorPlugin {
 }
 
 fn load_assets(mut handles: ResMut<VoxelAssetHandles>, asset_server: Res<AssetServer>) {
-    let texture: Handle<Texture> = asset_server.load("../assets/textures/terrain.png");
+    const TERRAIN_TEXTURE_PATH: &str = "../assets/textures/terrain.png";
+    const FRAGMENT_SHADER_PATH: &str = "../assets/shaders/voxel.frag";
+    const VERTEX_SHADER_PATH: &str = "../assets/shaders/voxel.vert";
+
+    let texture: Handle<Texture> = asset_server.load(TERRAIN_TEXTURE_PATH);
     handles.vec.push(texture.clone_untyped());
     handles.texture = texture;
 
-    let vert_shader = asset_server.load::<Shader, _>(VERTEX_SHADER);
+    let vert_shader = asset_server.load::<Shader, _>(VERTEX_SHADER_PATH);
     handles.vec.push(vert_shader.clone_untyped());
     handles.vert_shader = vert_shader;
 
-    let frag_shader = asset_server.load::<Shader, _>(FRAGMENT_SHADER);
+    let frag_shader = asset_server.load::<Shader, _>(FRAGMENT_SHADER_PATH);
     handles.vec.push(frag_shader.clone_untyped());
     handles.frag_shader = frag_shader;
 }
@@ -102,7 +106,7 @@ pub struct VoxelAssetHandles {
     vert_shader: Handle<Shader>,
     frag_shader: Handle<Shader>,
     texture: Handle<Texture>,
-    material: Handle<MyMaterial>,
+    material: Handle<TerrainMaterial>,
     pipeline: Handle<PipelineDescriptor>,
     vec: Vec<HandleUntyped>,
 }
@@ -140,9 +144,6 @@ impl Default for GeneratedVoxelResource {
     }
 }
 
-const SEA_LEVEL: f64 = 10.0;
-const TERRAIN_Y_SCALE: f64 = 0.2;
-
 type VoxelMaterial = u8;
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Voxel(VoxelMaterial);
@@ -169,7 +170,7 @@ impl MaterialVoxel for Voxel {
 
 #[derive(RenderResources, ShaderDefs, Default, TypeUuid)]
 #[uuid = "620f651b-adbe-464b-b740-ba0e547282ba"]
-pub struct MyMaterial {
+pub struct TerrainMaterial {
     pub albedo: Color,
     pub albedo_texture: Option<Handle<Texture>>,
     pub custom_val: f32,
@@ -177,15 +178,15 @@ pub struct MyMaterial {
     pub shaded: bool,
 }
 
-const FRAGMENT_SHADER: &str = "../assets/shaders/voxel.frag";
-const VERTEX_SHADER: &str = "../assets/shaders/voxel.vert";
+const SEA_LEVEL: f64 = 10.0;
+const TERRAIN_Y_SCALE: f64 = 0.2;
+const NUM_BLOCKS: u32 = 4;
 
 fn setup_generator_system(
-    _commands: &mut Commands,
     mut state: ResMut<State<PluginState>>,
     asset_server: ResMut<AssetServer>,
     mut pipelines: ResMut<Assets<PipelineDescriptor>>,
-    mut materials: ResMut<Assets<MyMaterial>>,
+    mut materials: ResMut<Assets<TerrainMaterial>>,
     mut textures: ResMut<Assets<Texture>>,
     mut render_graph: ResMut<RenderGraph>,
     mut handles: ResMut<VoxelAssetHandles>,
@@ -199,20 +200,19 @@ fn setup_generator_system(
         fragment: Some(handles.frag_shader.clone()),
     }));
 
-    // Add an AssetRenderResourcesNode to our Render Graph. This will bind MyMaterial resources to our shader
+    // Add an AssetRenderResourcesNode to our Render Graph. This will bind TerrainMaterial resources to our shader
     render_graph.add_system_node(
-        "voxel_material",
-        AssetRenderResourcesNode::<MyMaterial>::new(true),
+        "terrain_material",
+        AssetRenderResourcesNode::<TerrainMaterial>::new(true),
     );
 
     // Add a Render Graph edge connecting our new "voxel_material" node to the main pass node. This ensures "voxel_material" runs before the main pass
     render_graph
-        .add_node_edge("voxel_material", base::node::MAIN_PASS)
+        .add_node_edge("terrain_material", base::node::MAIN_PASS)
         .unwrap();
 
-    //let texture_handle = asset_server.load("../assets/textures/terrain.png");
     // Create a new material
-    let material_handle = materials.add(MyMaterial {
+    let material_handle = materials.add(TerrainMaterial {
         albedo: Color::rgb(1.0, 1.0, 1.0),
         albedo_texture: Some(handles.texture.clone()),
         custom_val: 0.0,
@@ -229,13 +229,11 @@ fn setup_generator_system(
     let array_layers = NUM_BLOCKS + 1;
     texture.reinterpret_stacked_2d_as_array(array_layers);
 
-    handles.material = material_handle.clone();
+    handles.material = material_handle;
     handles.pipeline = pipeline_handle;
 
     state.set_next(PluginState::Finished).unwrap();
 }
-
-const NUM_BLOCKS: u32 = 4;
 
 pub fn voxel_generator_system(
     commands: &mut Commands,
@@ -244,7 +242,7 @@ pub fn voxel_generator_system(
     pool: Res<ComputeTaskPool>,
     mut state: ResMut<MeshGeneratorState>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut voxel_materials: ResMut<Assets<MyMaterial>>,
+    mut voxel_materials: ResMut<Assets<TerrainMaterial>>,
 ) {
     let new_shape_requested = false;
 
@@ -282,7 +280,7 @@ pub fn voxel_generator_system(
 fn create_mesh_entity(
     mesh_data: ChunkMeshData,
     commands: &mut Commands,
-    voxel_material: Handle<MyMaterial>,
+    voxel_material: Handle<TerrainMaterial>,
     pipelines: RenderPipelines,
     meshes: &mut Assets<Mesh>,
 ) -> Entity {
@@ -337,7 +335,7 @@ struct ChunkMeshData {
     vert_ao_vals: Vec<f32>,
 }
 
-const CHUNK_SIZE: i32 = 64;
+const CHUNK_SIZE: i32 = 16;
 
 fn generate_chunk_meshes(voxel_generation: Terrain, pool: &TaskPool) -> Vec<Option<ChunkMeshData>> {
     let voxels = voxel_generation.get_voxels();
@@ -603,7 +601,7 @@ fn get_ao_at_vert(
     }
 }
 
-fn generate_chunk(res: &mut ResMut<GeneratedVoxelResource>, min: Point3i, max: Point3i) {
+fn get_chunk_voxels(res: &mut ResMut<GeneratedVoxelResource>, min: Point3i, max: Point3i) {
     let yoffset = SEA_LEVEL;
     let yscale = TERRAIN_Y_SCALE * yoffset;
     for z in min.z()..max.z() {
@@ -656,7 +654,7 @@ fn generate_chunks_system(
             if voxel_meshes.generated_map.get(&p).is_some() || d.dot(&d) > vd2 {
                 continue;
             }
-            generate_chunk(
+            get_chunk_voxels(
                 &mut voxels,
                 PointN([x, 0, z]),
                 PointN([x + chunk_size, max_height, z + chunk_size]),
@@ -728,12 +726,11 @@ fn process_quad_buffer(
         })
     }
 }
-// let mut chunk_map = builder.build(CompressibleChunkStorage::new(Lz4 { level: 10 }));
-// let reader = chunk_map.storage().reader(&local_cache);
+
 fn spawn_mesh(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
-    voxel_material: Handle<MyMaterial>,
+    voxel_material: Handle<TerrainMaterial>,
     voxel_map: &VoxelMap,
     extent: Extent3i,
     pipelines: &RenderPipelines,
