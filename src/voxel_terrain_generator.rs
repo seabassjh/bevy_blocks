@@ -1,22 +1,27 @@
-use std::{collections::{HashMap, HashSet}, hash::BuildHasherDefault};
+use std::collections::{HashMap, HashSet};
 
-//use super::voxel_texturing::{FRAGMENT_SHADER, VERTEX_SHADER};
-use building_blocks::{core::prelude::*, storage::ChunkHashMap};
 use building_blocks::mesh::*;
 use building_blocks::storage::{prelude::*, IsEmpty};
+use building_blocks::{core::prelude::*, storage::ChunkHashMap};
 use noise::{MultiFractal, NoiseFn, RidgedMulti, Seedable};
 use rand::Rng;
 
-use bevy::{asset::LoadState, prelude::*, reflect::TypeUuid, render::{
+use bevy::{
+    asset::LoadState,
+    prelude::*,
+    reflect::TypeUuid,
+    render::{
         mesh::{Indices, VertexAttributeValues},
         pipeline::{PipelineDescriptor, PrimitiveTopology, RenderPipeline},
         render_graph::{base, AssetRenderResourcesNode, RenderGraph},
         renderer::RenderResources,
         shader::{ShaderDefs, ShaderStages},
         texture::AddressMode,
-    }, tasks::{ComputeTaskPool, TaskPool}};
+    },
+    tasks::{ComputeTaskPool, TaskPool},
+};
 
-const STAGE: &str = "app_state";
+const STAGE: &str = "plugin_state";
 
 #[derive(Clone)]
 enum PluginState {
@@ -25,9 +30,9 @@ enum PluginState {
     Finished,
 }
 
-pub struct VoxelGeneratorPlugin;
+pub struct VoxelTerrainGeneratorPlugin;
 
-impl Plugin for VoxelGeneratorPlugin {
+impl Plugin for VoxelTerrainGeneratorPlugin {
     fn build(&self, builder: &mut AppBuilder) {
         builder
             .add_asset::<MyMaterial>()
@@ -39,10 +44,18 @@ impl Plugin for VoxelGeneratorPlugin {
             .add_stage_after(stage::UPDATE, STAGE, StateStage::<PluginState>::default())
             .on_state_enter(STAGE, PluginState::PreInit, load_assets.system())
             .on_state_update(STAGE, PluginState::PreInit, check_assets.system())
-            .on_state_enter(STAGE, PluginState::Init, init_voxel_generator_system.system())
-            //.on_state_enter(STAGE, PluginState::Finished, voxel_generator_system.system())
-            .on_state_enter(STAGE, PluginState::Finished, generate_voxels.system())
-            .on_state_enter(STAGE, PluginState::Finished, generate_meshes.system());
+            .on_state_enter(STAGE, PluginState::Init, setup_generator_system.system())
+            .on_state_update(
+                STAGE,
+                PluginState::Finished,
+                generate_chunks_system.system(),
+            )
+            .on_state_update(
+                STAGE,
+                PluginState::Finished,
+                generate_chunk_meshes_system.system(),
+            );
+        //.on_state_enter(STAGE, PluginState::Finished, voxel_generator_system.system())
     }
 }
 
@@ -106,14 +119,13 @@ struct GeneratedVoxelResource {
 }
 
 impl Default for GeneratedVoxelResource {
-    fn default() -> Self {        
-
+    fn default() -> Self {
         let builder = ChunkMapBuilder {
             chunk_shape: PointN([CHUNK_SIZE; 3]),
             ambient_value: Voxel(0),
             default_chunk_metadata: (),
         };
-        
+
         GeneratedVoxelResource {
             noise: RidgedMulti::new()
                 .set_seed(1234)
@@ -168,7 +180,7 @@ pub struct MyMaterial {
 const FRAGMENT_SHADER: &str = "../assets/shaders/voxel.frag";
 const VERTEX_SHADER: &str = "../assets/shaders/voxel.vert";
 
-fn init_voxel_generator_system(
+fn setup_generator_system(
     _commands: &mut Commands,
     mut state: ResMut<State<PluginState>>,
     asset_server: ResMut<AssetServer>,
@@ -225,10 +237,6 @@ fn init_voxel_generator_system(
 
 const NUM_BLOCKS: u32 = 4;
 
-pub fn post_init_voxel_generator_system() {
-
-}
-
 pub fn voxel_generator_system(
     commands: &mut Commands,
     mut assets: ResMut<VoxelAssetHandles>,
@@ -247,7 +255,7 @@ pub fn voxel_generator_system(
         }
 
         let voxel_material_handle = assets.material.clone();
-        
+
         let render_pipelines =
             RenderPipelines::from_pipelines(vec![RenderPipeline::new(assets.pipeline.clone())]);
 
@@ -266,7 +274,6 @@ pub fn voxel_generator_system(
                     render_pipelines.clone(),
                     &mut meshes,
                 ));
-
             }
         }
     }
@@ -374,7 +381,6 @@ fn generate_chunk_meshes(voxel_generation: Terrain, pool: &TaskPool) -> Vec<Opti
                 for group in buffer.quad_groups.iter() {
                     for (quad, material) in group.quads.iter() {
                         for v in group.face.quad_corners(quad).iter() {
-                            
                             let v_ao =
                                 get_ao_at_vert(*v, &padded_chunk, &padded_chunk_extent) as f32;
                             vert_ao_vals.extend_from_slice(&[v_ao]);
@@ -436,7 +442,7 @@ impl Terrain {
                 }
 
                 voxels
-            },
+            }
             Terrain::AllBlocks => {
                 let extent =
                     Extent3i::from_min_and_shape(PointN([-20; 3]), PointN([40; 3])).padded(1);
@@ -457,7 +463,7 @@ impl Terrain {
                 voxels.fill_extent(&debug_blocks_3, Voxel(4));
 
                 voxels
-            },
+            }
             Terrain::Debug => {
                 let extent =
                     Extent3i::from_min_and_shape(PointN([-20; 3]), PointN([40; 3])).padded(1);
@@ -499,9 +505,11 @@ impl Terrain {
     }
 }
 
-fn get_ao_at_vert(v: Point3f, padded_chunk: &ArrayN<[i32; 3], Voxel>, padded_chunk_extent: &Extent3i) -> i32
-{
-
+fn get_ao_at_vert(
+    v: Point3f,
+    padded_chunk: &ArrayN<[i32; 3], Voxel>,
+    padded_chunk_extent: &Extent3i,
+) -> i32 {
     let loc: Point3i = PointN([(v.x()) as i32, (v.y()) as i32, (v.z()) as i32]);
 
     let top0_loc = PointN([loc.x() - 1, loc.y(), loc.z()]);
@@ -527,14 +535,14 @@ fn get_ao_at_vert(v: Point3f, padded_chunk: &ArrayN<[i32; 3], Voxel>, padded_chu
     } else {
         false
     };
-    
+
     let top2 = if padded_chunk_extent.contains(&top2_loc) {
         let vox = padded_chunk.get(&top2_loc);
         !vox.is_empty()
     } else {
         false
     };
-    
+
     let top3 = if padded_chunk_extent.contains(&top3_loc) {
         let vox = padded_chunk.get(&top3_loc);
         !vox.is_empty()
@@ -570,10 +578,9 @@ fn get_ao_at_vert(v: Point3f, padded_chunk: &ArrayN<[i32; 3], Voxel>, padded_chu
         false
     };
 
-    let (side0, side1, corner) = 
-	if !top0 && bot0 {
-		(top2, top3, top1)
-	} else {
+    let (side0, side1, corner) = if !top0 && bot0 {
+        (top2, top3, top1)
+    } else {
         if !top1 && bot1 {
             (top2, top3, top0)
         } else {
@@ -583,16 +590,16 @@ fn get_ao_at_vert(v: Point3f, padded_chunk: &ArrayN<[i32; 3], Voxel>, padded_chu
                 if !top3 && bot3 {
                     (top0, top1, top2)
                 } else {
-                    return 0
+                    return 0;
                 }
             }
         }
     };
 
     if side0 && side1 {
-		return 3;
+        return 3;
     } else {
-        return side0 as i32 + side1 as i32 + corner as i32
+        return side0 as i32 + side1 as i32 + corner as i32;
     }
 }
 
@@ -611,7 +618,7 @@ fn generate_chunk(res: &mut ResMut<GeneratedVoxelResource>, min: Point3i, max: P
 }
 
 #[derive(Bundle)]
-pub struct GeneratedVoxelsTag;
+pub struct GenerateAtTag;
 
 struct GeneratedMeshesResource {
     pub generated_map: HashMap<Point3i, (Entity, Handle<Mesh>)>,
@@ -625,13 +632,13 @@ impl Default for GeneratedMeshesResource {
     }
 }
 
-fn generate_voxels(
+fn generate_chunks_system(
     mut voxels: ResMut<GeneratedVoxelResource>,
     voxel_meshes: Res<GeneratedMeshesResource>,
-    query: Query<&Transform, With<GeneratedVoxelsTag>>,
+    query: Query<&Transform, With<GenerateAtTag>>,
 ) {
-    //let cam_transform = query.iter().next().expect("Failed to get camera transform");
-    let cam_pos = Vec3::new(0.0, 0.0, 0.0); //cam_transform.translation;
+    let cam_transform = query.iter().next().expect("Failed to get camera transform");
+    let cam_pos = cam_transform.translation;
     let cam_pos = PointN([cam_pos.x.round() as i32, 0i32, cam_pos.z.round() as i32]);
 
     let extent = transform_to_extent(cam_pos, voxels.view_distance);
@@ -690,22 +697,24 @@ fn extent_modulo_expand(extent: Extent3i, modulo: i32) -> Extent3i {
     )
 }
 
-fn process_quad_buffer(buffer: GreedyQuadsBuffer<VoxelMaterial>, padded_chunk: &ArrayN<[i32; 3], Voxel>, padded_chunk_extent: &Extent3i) -> Option<ChunkMeshData> {
+fn process_quad_buffer(
+    buffer: GreedyQuadsBuffer<VoxelMaterial>,
+    padded_chunk: &ArrayN<[i32; 3], Voxel>,
+    padded_chunk_extent: &Extent3i,
+) -> Option<ChunkMeshData> {
     let mut vert_vox_mat_vals: Vec<f32> = Vec::new();
     let mut vert_ao_vals: Vec<f32> = Vec::new();
     let mut mesh = PosNormTexMesh::default();
     for group in buffer.quad_groups.iter() {
         for (quad, material) in group.quads.iter() {
             for v in group.face.quad_corners(quad).iter() {
-                let v_ao =
-                   get_ao_at_vert(*v, padded_chunk, padded_chunk_extent) as f32;
+                let v_ao = get_ao_at_vert(*v, padded_chunk, padded_chunk_extent) as f32;
                 vert_ao_vals.extend_from_slice(&[v_ao]);
             }
 
             group.face.add_quad_to_pos_norm_tex_mesh(&quad, &mut mesh);
             let voxel_mat = *material as f32;
-            vert_vox_mat_vals
-                .extend_from_slice(&[voxel_mat, voxel_mat, voxel_mat, voxel_mat]);
+            vert_vox_mat_vals.extend_from_slice(&[voxel_mat, voxel_mat, voxel_mat, voxel_mat]);
         }
     }
 
@@ -729,15 +738,11 @@ fn spawn_mesh(
     extent: Extent3i,
     pipelines: &RenderPipelines,
 ) -> (Entity, Handle<Mesh>) {
-    println!("Mesh!");
-
     let extent_padded = extent.padded(1);
     let mut map = Array3::fill(extent_padded, Voxel(0));
     copy_extent(&extent_padded, voxel_map, &mut map);
     let mut quads = GreedyQuadsBuffer::new(extent_padded);
-    println!("Start greedy_quads");
     greedy_quads(&map, &extent_padded, &mut quads);
-    println!("End greedy_quads");
 
     let mesh_data = process_quad_buffer(quads, &map, &extent_padded).unwrap();
 
@@ -765,9 +770,14 @@ fn spawn_mesh(
     );
 
     render_mesh.set_indices(Some(Indices::U32(
-        mesh_data.pos_norm_tex_mesh.indices.iter().map(|i| *i as u32).collect(),
+        mesh_data
+            .pos_norm_tex_mesh
+            .indices
+            .iter()
+            .map(|i| *i as u32)
+            .collect(),
     )));
-    
+
     let mesh = meshes.add(render_mesh);
 
     let entity = commands
@@ -783,19 +793,19 @@ fn spawn_mesh(
     (entity, mesh)
 }
 
-fn generate_meshes(
+fn generate_chunk_meshes_system(
     mut commands: &mut Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut voxels: ChangedRes<GeneratedVoxelResource>,
+    voxels: ChangedRes<GeneratedVoxelResource>,
     mut voxel_meshes: ResMut<GeneratedMeshesResource>,
-    query: Query<&Transform, With<GeneratedVoxelsTag>>,
-    mut assets: ResMut<VoxelAssetHandles>,
+    query: Query<&Transform, With<GenerateAtTag>>,
+    assets: ResMut<VoxelAssetHandles>,
 ) {
-    //let cam_transform = query.iter().next().expect("Failed to get camera transform");
-    let cam_pos = Vec3::new(0.0,0.0,0.0);// cam_transform.translation;
+    let cam_transform = query.iter().next().expect("Failed to get camera transform");
+    let cam_pos = cam_transform.translation;
     let cam_pos = PointN([cam_pos.x.round() as i32, 0i32, cam_pos.z.round() as i32]);
 
-    let pipelines = 
+    let pipelines =
         RenderPipelines::from_pipelines(vec![RenderPipeline::new(assets.pipeline.clone())]);
 
     let view_distance = voxels.view_distance;

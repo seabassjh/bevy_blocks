@@ -1,11 +1,9 @@
 mod first_person_controller;
-mod voxel_generator;
+mod voxel_terrain_generator;
 
-use bevy::{prelude::*};
+use bevy::prelude::*;
 use first_person_controller::FirstPersonControllerPlugin;
-use voxel_generator::{
-    VoxelGeneratorPlugin,
-};
+use voxel_terrain_generator::VoxelTerrainGeneratorPlugin;
 
 fn main() {
     App::build()
@@ -22,7 +20,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup.system())
         .add_plugin(FirstPersonControllerPlugin)
-        .add_plugin(VoxelGeneratorPlugin)
+        .add_plugin(VoxelTerrainGeneratorPlugin)
         .run();
 }
 
@@ -53,5 +51,4 @@ fn setup(
             transform: Transform::from_translation(Vec3::new(0.0, 50.0, 0.0)),
             ..Default::default()
         });
-
 }

@@ -1,8 +1,6 @@
+use crate::voxel_terrain_generator::GenerateAtTag;
 use bevy::input::mouse::*;
 use bevy::prelude::*;
-use crate::voxel_generator::{
-    GeneratedVoxelsTag,
-};
 
 pub struct FirstPersonControllerPlugin;
 
@@ -27,7 +25,7 @@ fn setup(commands: &mut Commands, mut windows: ResMut<Windows>) {
     commands
         .spawn(Camera3dBundle {
             transform: Transform {
-                translation: Vec3::new(-6.0, 5.0, -6.0),
+                translation: Vec3::new(-6.0, 40.0, -6.0),
                 rotation: Quat::from_rotation_ypr(
                     player_controller.yaw,
                     player_controller.pitch,
@@ -38,7 +36,7 @@ fn setup(commands: &mut Commands, mut windows: ResMut<Windows>) {
             ..Default::default()
         })
         .with(player_controller)
-        .with(GeneratedVoxelsTag);
+        .with(GenerateAtTag);
 
     commands.insert_resource(FPPlayerControllerState::new());
 
