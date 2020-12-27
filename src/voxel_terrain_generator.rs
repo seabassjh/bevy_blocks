@@ -21,6 +21,14 @@ use bevy::{
     tasks::{ComputeTaskPool, TaskPool},
 };
 
+use bevy_rapier3d::{
+    physics::{ColliderHandleComponent, RigidBodyHandleComponent},
+    rapier::{
+        dynamics::{JointSet, RigidBodyBuilder, RigidBodyHandle, RigidBodySet},
+        geometry::{ColliderBuilder, ColliderSet},
+    },
+};
+
 const STAGE: &str = "plugin_state";
 
 #[derive(Clone)]
@@ -619,7 +627,7 @@ fn get_chunk_voxels(res: &mut ResMut<GeneratedVoxelResource>, min: Point3i, max:
 pub struct GenerateAtTag;
 
 struct GeneratedMeshesResource {
-    pub generated_map: HashMap<Point3i, (Entity, Handle<Mesh>)>,
+    pub generated_map: HashMap<Point3i, (Entity, Handle<Mesh>, RigidBodyHandle)>,
 }
 
 impl Default for GeneratedMeshesResource {
@@ -727,26 +735,32 @@ fn process_quad_buffer(
     }
 }
 
-fn spawn_mesh(
-    commands: &mut Commands,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    voxel_material: Handle<TerrainMaterial>,
-    voxel_map: &VoxelMap,
-    extent: Extent3i,
-    pipelines: &RenderPipelines,
-) -> (Entity, Handle<Mesh>) {
+fn generate_mesh(voxel_map: &VoxelMap, extent: Extent3i) -> ChunkMeshData {
     let extent_padded = extent.padded(1);
     let mut map = Array3::fill(extent_padded, Voxel(0));
     copy_extent(&extent_padded, voxel_map, &mut map);
     let mut quads = GreedyQuadsBuffer::new(extent_padded);
     greedy_quads(&map, &extent_padded, &mut quads);
 
-    let mesh_data = process_quad_buffer(quads, &map, &extent_padded).unwrap();
+    process_quad_buffer(quads, &map, &extent_padded).unwrap()
+}
+
+fn spawn_mesh(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    mut bodies: &mut ResMut<RigidBodySet>,
+    colliders: &mut ResMut<ColliderSet>,
+    voxel_material: Handle<TerrainMaterial>,
+    voxel_map: &VoxelMap,
+    extent: Extent3i,
+    pipelines: &RenderPipelines,
+) -> (Entity, Handle<Mesh>, RigidBodyHandle) {
+    let mesh_data = generate_mesh(voxel_map, extent);
 
     let mut render_mesh = Mesh::new(PrimitiveTopology::TriangleList);
     render_mesh.set_attribute(
         Mesh::ATTRIBUTE_POSITION,
-        VertexAttributeValues::Float3(mesh_data.pos_norm_tex_mesh.positions),
+        VertexAttributeValues::Float3(mesh_data.pos_norm_tex_mesh.positions.clone()),
     );
     render_mesh.set_attribute(
         Mesh::ATTRIBUTE_NORMAL,
@@ -766,16 +780,34 @@ fn spawn_mesh(
         VertexAttributeValues::Float(mesh_data.vert_ao_vals),
     );
 
-    render_mesh.set_indices(Some(Indices::U32(
-        mesh_data
-            .pos_norm_tex_mesh
-            .indices
-            .iter()
-            .map(|i| *i as u32)
-            .collect(),
-    )));
+    let indices: Vec<u32> = mesh_data
+        .pos_norm_tex_mesh
+        .indices
+        .iter()
+        .map(|i| *i as u32)
+        .collect();
+
+    render_mesh.set_indices(Some(Indices::U32(indices.clone())));
 
     let mesh = meshes.add(render_mesh);
+
+    let vertices = mesh_data
+        .pos_norm_tex_mesh
+        .positions
+        .iter()
+        .map(|p| bevy_rapier3d::rapier::math::Point::from_slice(p))
+        .collect();
+    let indices = indices
+        .chunks(3)
+        .map(|i| bevy_rapier3d::rapier::na::Point3::<u32>::from_slice(i))
+        .collect();
+
+    let body_handle = bodies.insert(RigidBodyBuilder::new_static().build());
+    let collider_handle = colliders.insert(
+        ColliderBuilder::trimesh(vertices, indices).build(),
+        body_handle,
+        &mut bodies,
+    );
 
     let entity = commands
         .spawn(MeshBundle {
@@ -785,14 +817,21 @@ fn spawn_mesh(
             ..Default::default()
         })
         .with(voxel_material)
+        .with_bundle((
+            RigidBodyHandleComponent::from(body_handle),
+            ColliderHandleComponent::from(collider_handle),
+        ))
         .current_entity()
         .unwrap();
-    (entity, mesh)
+    (entity, mesh, body_handle)
 }
 
 fn generate_chunk_meshes_system(
     mut commands: &mut Commands,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut bodies: ResMut<RigidBodySet>,
+    mut colliders: ResMut<ColliderSet>,
+    mut joints: ResMut<JointSet>,
     voxels: ChangedRes<GeneratedVoxelResource>,
     mut voxel_meshes: ResMut<GeneratedMeshesResource>,
     query: Query<&Transform, With<GenerateAtTag>>,
@@ -829,6 +868,8 @@ fn generate_chunk_meshes_system(
             let entity_mesh = spawn_mesh(
                 &mut commands,
                 &mut meshes,
+                &mut bodies,
+                &mut colliders,
                 assets.material.clone(),
                 &voxels.map,
                 Extent3i::from_min_and_shape(p, PointN([chunk_size, max_height, chunk_size])),
@@ -838,9 +879,10 @@ fn generate_chunk_meshes_system(
         }
     }
     for p in &to_remove {
-        if let Some((entity, mesh)) = voxel_meshes.generated_map.remove(p) {
+        if let Some((entity, mesh, body)) = voxel_meshes.generated_map.remove(p) {
             commands.despawn(entity);
             meshes.remove(&mesh);
+            bodies.remove(body, &mut *colliders, &mut *joints);
         }
     }
 }

@@ -2,6 +2,7 @@ mod first_person_controller;
 mod voxel_terrain_generator;
 
 use bevy::prelude::*;
+use bevy_rapier3d::physics::RapierPhysicsPlugin;
 use first_person_controller::FirstPersonControllerPlugin;
 use voxel_terrain_generator::VoxelTerrainGeneratorPlugin;
 
@@ -17,6 +18,7 @@ fn main() {
         .add_resource(ClearColor(Color::rgb(0.4, 0.8, 1.0)))
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup.system())
+        .add_plugin(RapierPhysicsPlugin)
         .add_plugin(FirstPersonControllerPlugin)
         .add_plugin(VoxelTerrainGeneratorPlugin)
         .run();
