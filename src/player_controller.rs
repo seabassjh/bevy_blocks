@@ -50,7 +50,11 @@ fn setup_player_system(commands: &mut Commands, character_settings: Res<Characte
             Transform::identity(),
             CharacterController::default(),
             RigidBodyBuilder::new_dynamic()
-                .translation(0.0, 0.5 * (box_y + character_settings.scale.y) + y_spawn_offset, 0.0)
+                .translation(
+                    0.0,
+                    0.5 * (box_y + character_settings.scale.y) + y_spawn_offset,
+                    0.0,
+                )
                 .principal_angular_inertia(
                     bevy_rapier3d::rapier::na::Vector3::zeros(),
                     bevy_rapier3d::rapier::na::Vector3::repeat(false),

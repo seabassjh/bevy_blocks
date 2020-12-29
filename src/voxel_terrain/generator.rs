@@ -1,12 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
-use building_blocks::{mesh::*, storage::BincodeCompression, storage::compression::Lz4};
-use building_blocks::storage::{prelude::*, IsEmpty};
+use super::{
+    constants::*,
+    save_load::{load_chunk_from_file, save_chunk_to_file},
+};
 use building_blocks::{core::prelude::*, storage::ChunkHashMap};
-use fnv::FnvHashMap;
-use serde::{Deserialize, Serialize};
+use building_blocks::{
+    mesh::{greedy_quads::*, MaterialVoxel, PosNormTexMesh},
+    storage::{prelude::*, IsEmpty},
+};
 use noise::{MultiFractal, NoiseFn, RidgedMulti, Seedable};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 use bevy::{
     asset::LoadState,
@@ -121,7 +126,7 @@ pub struct VoxelAssetHandles {
     vec: Vec<HandleUntyped>,
 }
 
-type VoxelMap = ChunkHashMap<[i32; 3], Voxel, ()>;
+pub type VoxelMap = ChunkHashMap<[i32; 3], Voxel, ()>;
 
 struct GeneratedVoxelResource {
     pub noise: RidgedMulti,
@@ -155,8 +160,8 @@ impl Default for GeneratedVoxelResource {
 }
 
 type VoxelType = u8;
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct Voxel(VoxelType);
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Voxel(pub VoxelType);
 
 impl Default for Voxel {
     fn default() -> Self {
@@ -187,10 +192,6 @@ pub struct TerrainMaterial {
     #[render_resources(ignore)]
     pub shaded: bool,
 }
-
-const SEA_LEVEL: f64 = 10.0;
-const TERRAIN_Y_SCALE: f64 = 0.2;
-const NUM_TEXTURE_LAYERS: u32 = 5;
 
 fn setup_generator_system(
     mut state: ResMut<State<PluginState>>,
@@ -344,8 +345,6 @@ struct ChunkMeshData {
     vert_vox_mat_vals: Vec<f32>,
     vert_ao_vals: Vec<f32>,
 }
-
-const CHUNK_SIZE: i32 = 16;
 
 fn generate_chunk_meshes(voxel_generation: Terrain, pool: &TaskPool) -> Vec<Option<ChunkMeshData>> {
     let voxels = voxel_generation.get_voxels();
@@ -640,36 +639,6 @@ impl Default for GeneratedMeshesResource {
     }
 }
 
-// fn serialize_chunk(voxel_map: &VoxelMap, extent: Extent3i) -> Vec<u8> {
-//     let _extent_padded = extent.padded(1);
-    
-//     let builder = ChunkMapBuilder {
-//         chunk_shape: PointN([CHUNK_SIZE; 3]),
-//         ambient_value: Voxel(0),
-//         default_chunk_metadata: (),
-//     };
-
-//     let mut map = builder.build_with_hash_map_storage();
-
-//     copy_extent(&extent, voxel_map, &mut map);
-
-//     let compression = Lz4 { level: 10 };
-//     let serializable = futures::executor::block_on(SerializableChunkMap::from_chunk_map(
-//         BincodeCompression::new(compression),
-//         map,
-//     ));
-
-//     let serialized: Vec<u8> = bincode::serialize(&serializable).unwrap();
-
-//     serialized
-// }
-
-// fn deserialize_chunk(serialized: Vec<u8>) {
-//     let deserialized: SerializableChunkMap<[i32; 3], i32, (), Lz4> =
-//         bincode::deserialize(&serialized).unwrap();
-//     let map = futures::executor::block_on(deserialized.into_chunk_map(FnvHashMap::default()));
-// }
-
 fn generate_chunks_system(
     mut voxels: ResMut<GeneratedVoxelResource>,
     voxel_meshes: Res<GeneratedMeshesResource>,
@@ -699,6 +668,13 @@ fn generate_chunks_system(
                 PointN([x, 0, z]),
                 PointN([x + chunk_size, max_height, z + chunk_size]),
             );
+
+            // save_chunk_to_file(
+            //     p,
+            //     &voxels.map,
+            //     Extent3i::from_min_and_shape(p, PointN([chunk_size, max_height, chunk_size])),
+            // )
+            // .expect("Failed to save chunk to file");
         }
     }
 }
@@ -737,11 +713,11 @@ fn extent_modulo_expand(extent: Extent3i, modulo: i32) -> Extent3i {
 
 fn texture_layer_from_voxel_type(voxel_type: VoxelType) -> (i32, i32, i32) {
     match voxel_type {
-        1 => (1,2,3),
-        2 => (3,3,3),
-        3 => (4,4,4),
-        4 => (5,5,5),
-        _ => (0,0,0),
+        1 => (1, 2, 3),
+        2 => (3, 3, 3),
+        3 => (4, 4, 4),
+        4 => (5, 5, 5),
+        _ => (0, 0, 0),
     }
 }
 
@@ -762,11 +738,17 @@ fn process_quad_buffer(
 
             group.face.add_quad_to_pos_norm_tex_mesh(&quad, &mut mesh);
 
-            let (top_tex_layer, sides_tex_layer, bottom_tex_layer) = texture_layer_from_voxel_type(*material);
+            let (top_tex_layer, sides_tex_layer, bottom_tex_layer) =
+                texture_layer_from_voxel_type(*material);
             let voxel_mat = match group.face.n {
-                PointN([0, 1, 0]) => if group.face.n_sign > 0 { top_tex_layer } else { bottom_tex_layer },
+                PointN([0, 1, 0]) => {
+                    if group.face.n_sign > 0 {
+                        top_tex_layer
+                    } else {
+                        bottom_tex_layer
+                    }
+                }
                 _ => sides_tex_layer,
-
             } as f32;
 
             vert_vox_mat_vals.extend_from_slice(&[voxel_mat, voxel_mat, voxel_mat, voxel_mat]);
@@ -912,8 +894,24 @@ fn generate_chunk_meshes_system(
                 continue;
             }
 
+            let builder = ChunkMapBuilder {
+                chunk_shape: PointN([CHUNK_SIZE; 3]),
+                ambient_value: Voxel(0),
+                default_chunk_metadata: (),
+            };
+
+            let mut loaded_map = builder.build_with_hash_map_storage();
+
+            // load_chunk_from_file(
+            //     p,
+            //     &mut loaded_map,
+            //     Extent3i::from_min_and_shape(p, PointN([chunk_size, max_height, chunk_size])),
+            // )
+            // .expect("Could not load chunk from file");
+
             let mesh_data = generate_mesh(
                 &voxels.map,
+                //&loaded_map,
                 Extent3i::from_min_and_shape(p, PointN([chunk_size, max_height, chunk_size])),
             );
 
