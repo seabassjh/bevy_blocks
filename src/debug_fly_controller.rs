@@ -2,9 +2,9 @@ use crate::voxel_terrain_generator::GenerateAtTag;
 use bevy::input::mouse::*;
 use bevy::prelude::*;
 
-pub struct FirstPersonControllerPlugin;
+pub struct DebugFlyControllerPlugin;
 
-impl Plugin for FirstPersonControllerPlugin {
+impl Plugin for DebugFlyControllerPlugin {
     fn build(&self, builder: &mut AppBuilder) {
         builder
             .add_startup_system(setup.system())

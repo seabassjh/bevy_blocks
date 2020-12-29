@@ -1,9 +1,9 @@
-mod first_person_controller;
+mod debug_fly_controller;
 mod voxel_terrain_generator;
 
 use bevy::prelude::*;
 use bevy_rapier3d::physics::RapierPhysicsPlugin;
-use first_person_controller::FirstPersonControllerPlugin;
+use debug_fly_controller::DebugFlyControllerPlugin;
 use voxel_terrain_generator::VoxelTerrainGeneratorPlugin;
 
 fn main() {
@@ -19,7 +19,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup.system())
         .add_plugin(RapierPhysicsPlugin)
-        .add_plugin(FirstPersonControllerPlugin)
+        .add_plugin(DebugFlyControllerPlugin)
         .add_plugin(VoxelTerrainGeneratorPlugin)
         .run();
 }
