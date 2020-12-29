@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
-use building_blocks::mesh::*;
+use building_blocks::{mesh::*, storage::BincodeCompression, storage::compression::Lz4};
 use building_blocks::storage::{prelude::*, IsEmpty};
 use building_blocks::{core::prelude::*, storage::ChunkHashMap};
+use fnv::FnvHashMap;
+use serde::{Deserialize, Serialize};
 use noise::{MultiFractal, NoiseFn, RidgedMulti, Seedable};
 use rand::Rng;
 
@@ -188,7 +190,7 @@ pub struct TerrainMaterial {
 
 const SEA_LEVEL: f64 = 10.0;
 const TERRAIN_Y_SCALE: f64 = 0.2;
-const NUM_BLOCKS: u32 = 4;
+const NUM_TEXTURE_LAYERS: u32 = 5;
 
 fn setup_generator_system(
     mut state: ResMut<State<PluginState>>,
@@ -234,7 +236,7 @@ fn setup_generator_system(
     texture.sampler.address_mode_w = AddressMode::Repeat;
 
     // Create a new array texture asset from the loaded texture.
-    let array_layers = NUM_BLOCKS + 1;
+    let array_layers = NUM_TEXTURE_LAYERS + 1;
     texture.reinterpret_stacked_2d_as_array(array_layers);
 
     handles.material = material_handle;
@@ -637,6 +639,36 @@ impl Default for GeneratedMeshesResource {
         }
     }
 }
+
+// fn serialize_chunk(voxel_map: &VoxelMap, extent: Extent3i) -> Vec<u8> {
+//     let _extent_padded = extent.padded(1);
+    
+//     let builder = ChunkMapBuilder {
+//         chunk_shape: PointN([CHUNK_SIZE; 3]),
+//         ambient_value: Voxel(0),
+//         default_chunk_metadata: (),
+//     };
+
+//     let mut map = builder.build_with_hash_map_storage();
+
+//     copy_extent(&extent, voxel_map, &mut map);
+
+//     let compression = Lz4 { level: 10 };
+//     let serializable = futures::executor::block_on(SerializableChunkMap::from_chunk_map(
+//         BincodeCompression::new(compression),
+//         map,
+//     ));
+
+//     let serialized: Vec<u8> = bincode::serialize(&serializable).unwrap();
+
+//     serialized
+// }
+
+// fn deserialize_chunk(serialized: Vec<u8>) {
+//     let deserialized: SerializableChunkMap<[i32; 3], i32, (), Lz4> =
+//         bincode::deserialize(&serialized).unwrap();
+//     let map = futures::executor::block_on(deserialized.into_chunk_map(FnvHashMap::default()));
+// }
 
 fn generate_chunks_system(
     mut voxels: ResMut<GeneratedVoxelResource>,

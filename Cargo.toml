@@ -14,6 +14,10 @@ bevy_prototype_character_controller = { path = "crates/character_controller", fe
 noise = "0.6.0"
 rand = "0.7.3"
 bevy_rapier3d = "0.7.0"
+futures = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+bincode = "1.3"
+fnv = "1.0"
 
 [features]
 default = []

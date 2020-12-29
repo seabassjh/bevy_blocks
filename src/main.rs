@@ -1,11 +1,11 @@
 mod debug_fly_controller;
 mod player_controller;
-mod voxel_terrain_generator;
+mod voxel_terrain;
 
 use bevy::prelude::*;
 use bevy_rapier3d::physics::{RapierConfiguration, RapierPhysicsPlugin};
 use debug_fly_controller::DebugFlyControllerPlugin;
-use voxel_terrain_generator::VoxelTerrainGeneratorPlugin;
+use voxel_terrain::generator::VoxelTerrainGeneratorPlugin;
 use player_controller::PlayerControllerPlugin;
 
 fn main() {

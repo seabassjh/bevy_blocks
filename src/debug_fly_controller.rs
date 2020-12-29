@@ -1,4 +1,4 @@
-use crate::{voxel_terrain_generator::GenerateAtTag, CursorState};
+use crate::{voxel_terrain::generator::GenerateAtTag, CursorState};
 use bevy::input::mouse::*;
 use bevy::prelude::*;
 

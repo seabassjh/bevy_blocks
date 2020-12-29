@@ -1,4 +1,4 @@
-use crate::voxel_terrain_generator::GenerateAtTag;
+use crate::voxel_terrain::generator::GenerateAtTag;
 use bevy::{prelude::*, render::camera::PerspectiveProjection};
 use bevy_prototype_character_controller::{
     controller::{BodyTag, CameraTag, CharacterController, HeadTag, YawTag},
