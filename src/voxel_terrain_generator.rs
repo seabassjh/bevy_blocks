@@ -745,19 +745,17 @@ fn generate_mesh(voxel_map: &VoxelMap, extent: Extent3i) -> ChunkMeshData {
     process_quad_buffer(quads, &map, &extent_padded).unwrap()
 }
 
-fn spawn_mesh(
+fn create_chunk_entity(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     mut bodies: &mut ResMut<RigidBodySet>,
     colliders: &mut ResMut<ColliderSet>,
+    mesh_data: ChunkMeshData,
     voxel_material: Handle<TerrainMaterial>,
-    voxel_map: &VoxelMap,
-    extent: Extent3i,
     pipelines: &RenderPipelines,
 ) -> (Entity, Handle<Mesh>, RigidBodyHandle) {
-    let mesh_data = generate_mesh(voxel_map, extent);
-
     let mut render_mesh = Mesh::new(PrimitiveTopology::TriangleList);
+
     render_mesh.set_attribute(
         Mesh::ATTRIBUTE_POSITION,
         VertexAttributeValues::Float3(mesh_data.pos_norm_tex_mesh.positions.clone()),
@@ -813,7 +811,6 @@ fn spawn_mesh(
         .spawn(MeshBundle {
             mesh: mesh.clone(),
             render_pipelines: pipelines.to_owned(),
-            transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
             ..Default::default()
         })
         .with(voxel_material)
@@ -865,14 +862,19 @@ fn generate_chunk_meshes_system(
             if voxel_meshes.generated_map.get(&p).is_some() {
                 continue;
             }
-            let entity_mesh = spawn_mesh(
+
+            let mesh_data = generate_mesh(
+                &voxels.map,
+                Extent3i::from_min_and_shape(p, PointN([chunk_size, max_height, chunk_size])),
+            );
+
+            let entity_mesh = create_chunk_entity(
                 &mut commands,
                 &mut meshes,
                 &mut bodies,
                 &mut colliders,
+                mesh_data,
                 assets.material.clone(),
-                &voxels.map,
-                Extent3i::from_min_and_shape(p, PointN([chunk_size, max_height, chunk_size])),
                 &pipelines,
             );
             voxel_meshes.generated_map.insert(p, entity_mesh);
