@@ -1,4 +1,4 @@
-use crate::voxel_terrain_generator::GenerateAtTag;
+use crate::{voxel_terrain_generator::GenerateAtTag, CursorState};
 use bevy::input::mouse::*;
 use bevy::prelude::*;
 
@@ -9,7 +9,6 @@ impl Plugin for DebugFlyControllerPlugin {
         builder
             .add_startup_system(setup.system())
             .init_resource::<InputState>()
-            .add_system(toggle_cursor_system.system())
             .add_system(player_movement_system.system());
     }
 }
@@ -38,8 +37,6 @@ fn setup(commands: &mut Commands, mut windows: ResMut<Windows>) {
         .with(player_controller)
         .with(GenerateAtTag);
 
-    commands.insert_resource(FPPlayerControllerState::new());
-
     let window = windows.get_primary_mut().unwrap();
     window.set_cursor_lock_mode(false);
     window.set_cursor_visibility(true);
@@ -64,18 +61,6 @@ impl Default for PlayerController {
     }
 }
 
-pub struct FPPlayerControllerState {
-    cursor_locked: bool,
-}
-
-impl FPPlayerControllerState {
-    pub fn new() -> Self {
-        Self {
-            cursor_locked: false,
-        }
-    }
-}
-
 fn forward_vector(rotation: &Quat) -> Vec3 {
     rotation.mul_vec3(Vec3::unit_z()).normalize()
 }
@@ -96,7 +81,7 @@ fn strafe_vector(rotation: &Quat) -> Vec3 {
 fn player_movement_system(
     time: Res<Time>,
     mut input_state: ResMut<InputState>,
-    fp_controller_state: Res<FPPlayerControllerState>,
+    fp_controller_state: Res<CursorState>,
     keyboard_input: Res<Input<KeyCode>>,
     mouse_motion_events: Res<Events<MouseMotion>>,
     mut query: Query<(&mut PlayerController, &mut Transform, &mut GlobalTransform)>,
@@ -157,20 +142,5 @@ fn player_movement_system(
             transform.rotation =
                 Quat::from_rotation_ypr(player_controller.yaw, player_controller.pitch, 0.0);
         }
-    }
-}
-
-fn toggle_cursor_system(
-    mut state: ResMut<FPPlayerControllerState>,
-    input: Res<Input<KeyCode>>,
-    mut windows: ResMut<Windows>,
-) {
-    let window = windows.get_primary_mut().unwrap();
-    if input.just_pressed(KeyCode::Escape) {
-        state.cursor_locked = !state.cursor_locked;
-        let lock_mode = state.cursor_locked;
-        let visibility = !state.cursor_locked;
-        window.set_cursor_lock_mode(lock_mode);
-        window.set_cursor_visibility(visibility);
     }
 }

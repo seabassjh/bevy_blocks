@@ -152,9 +152,9 @@ impl Default for GeneratedVoxelResource {
     }
 }
 
-type VoxelMaterial = u8;
+type VoxelType = u8;
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Voxel(VoxelMaterial);
+struct Voxel(VoxelType);
 
 impl Default for Voxel {
     fn default() -> Self {
@@ -169,7 +169,7 @@ impl IsEmpty for Voxel {
 }
 
 impl MaterialVoxel for Voxel {
-    type Material = VoxelMaterial;
+    type Material = VoxelType;
 
     fn material(&self) -> Self::Material {
         self.0
@@ -442,7 +442,7 @@ impl Terrain {
                             (noise.get([x as f64, z as f64]) * yscale + yoffset).round() as i32;
                         let level =
                             Extent3i::from_min_and_shape(PointN([x, 0, z]), PointN([1, max_y, 1]));
-                        let vox_material = rng.gen_range(1, 5) as VoxelMaterial;
+                        let vox_material = rng.gen_range(1, 5) as VoxelType;
                         voxels.fill_extent(&level, Voxel(vox_material));
                     }
                 }
@@ -703,8 +703,18 @@ fn extent_modulo_expand(extent: Extent3i, modulo: i32) -> Extent3i {
     )
 }
 
+fn texture_layer_from_voxel_type(voxel_type: VoxelType) -> (i32, i32, i32) {
+    match voxel_type {
+        1 => (1,2,3),
+        2 => (3,3,3),
+        3 => (4,4,4),
+        4 => (5,5,5),
+        _ => (0,0,0),
+    }
+}
+
 fn process_quad_buffer(
-    buffer: GreedyQuadsBuffer<VoxelMaterial>,
+    buffer: GreedyQuadsBuffer<VoxelType>,
     padded_chunk: &ArrayN<[i32; 3], Voxel>,
     padded_chunk_extent: &Extent3i,
 ) -> Option<ChunkMeshData> {
@@ -719,7 +729,14 @@ fn process_quad_buffer(
             }
 
             group.face.add_quad_to_pos_norm_tex_mesh(&quad, &mut mesh);
-            let voxel_mat = *material as f32;
+
+            let (top_tex_layer, sides_tex_layer, bottom_tex_layer) = texture_layer_from_voxel_type(*material);
+            let voxel_mat = match group.face.n {
+                PointN([0, 1, 0]) => if group.face.n_sign > 0 { top_tex_layer } else { bottom_tex_layer },
+                _ => sides_tex_layer,
+
+            } as f32;
+
             vert_vox_mat_vals.extend_from_slice(&[voxel_mat, voxel_mat, voxel_mat, voxel_mat]);
         }
     }
