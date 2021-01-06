@@ -78,6 +78,9 @@ fn load_assets(mut handles: ResMut<VoxelAssetHandles>, asset_server: Res<AssetSe
     const TERRAIN_TEXTURE_PATH: &str = "../assets/textures/terrain.png";
     const FRAGMENT_SHADER_PATH: &str = "../assets/shaders/voxel.frag";
     const VERTEX_SHADER_PATH: &str = "../assets/shaders/voxel.vert";
+    
+    // Enable hot asset reloading
+    asset_server.watch_for_changes().unwrap();
 
     let texture: Handle<Texture> = asset_server.load(TERRAIN_TEXTURE_PATH);
     handles.vec.push(texture.clone_untyped());
@@ -202,9 +205,6 @@ fn setup_generator_system(
     mut render_graph: ResMut<RenderGraph>,
     mut handles: ResMut<VoxelAssetHandles>,
 ) {
-    // Enable hot relaoding for assets
-    asset_server.watch_for_changes().unwrap();
-
     // Create a new shader pipeline
     let pipeline_handle = pipelines.add(PipelineDescriptor::default_config(ShaderStages {
         vertex: handles.vert_shader.clone(),
@@ -611,6 +611,8 @@ fn get_ao_at_vert(
 }
 
 fn get_chunk_voxels(res: &mut ResMut<GeneratedVoxelResource>, min: Point3i, max: Point3i) {
+    let mut rng = rand::thread_rng();
+    let random_material = rng.gen_range(1, 4);
     let yoffset = SEA_LEVEL;
     let yscale = TERRAIN_Y_SCALE * yoffset;
     for z in min.z()..max.z() {
@@ -618,7 +620,7 @@ fn get_chunk_voxels(res: &mut ResMut<GeneratedVoxelResource>, min: Point3i, max:
             let max_y = (res.noise.get([x as f64, z as f64]) * yscale + yoffset).round() as i32;
             for y in 0..(max_y + 1) {
                 let (_p, v) = res.map.get_mut_point_and_chunk_key(&PointN([x, y, z]));
-                *v = Voxel(1);
+                *v = Voxel(random_material);
             }
         }
     }

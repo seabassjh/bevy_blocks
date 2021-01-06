@@ -32,8 +32,8 @@ pub struct CharacterSettings {
 impl Default for CharacterSettings {
     fn default() -> Self {
         Self {
-            scale: Vec3::new(0.5, 2.0, 0.3),
-            head_scale: 0.3,
+            scale: Vec3::new(0.5, 1.7, 0.3),
+            head_scale: 0.2,
             head_yaw: 0.0,
             focal_point: -Vec3::unit_z(), // Relative to head
             follow_offset: Vec3::zero(),  // Relative to head
@@ -102,6 +102,7 @@ fn setup_player_system(commands: &mut Commands, character_settings: Res<Characte
                 Vec3::unit_y(),
             )),
             perspective_projection: PerspectiveProjection {
+                fov: std::f32::consts::PI / 3.0,
                 near: 0.25,
                 ..Default::default()
             },
@@ -110,9 +111,15 @@ fn setup_player_system(commands: &mut Commands, character_settings: Res<Characte
         .with_bundle((LookDirection::default(), CameraTag))
         .current_entity()
         .expect("Failed to spawn camera");
+    let light = commands.spawn(LightBundle {
+        transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+        ..Default::default()
+    }).current_entity().expect("Coudln't spawn player light");
+
     commands
         .insert_one(body, LookEntity(camera))
         .push_children(body, &[yaw])
+        .push_children(body, &[light])
         .push_children(yaw, &[head])
         .push_children(head, &[camera]);
 }
