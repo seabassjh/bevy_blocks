@@ -11,13 +11,13 @@ use voxel_terrain::generator::VoxelTerrainGeneratorPlugin;
 fn main() {
     App::build()
         .add_resource(WindowDescriptor {
-            title: "Neveround".to_string(),
+            title: "Bevy Blocks".to_string(),
             vsync: true,
             resizable: true,
             ..Default::default()
         })
         .add_resource(Msaa { samples: 4 })
-        .add_resource(ClearColor(Color::rgb(0.0/255.0, 22.0/255.0, 43.0/255.0)))
+        .add_resource(ClearColor(Color::rgb(0.4, 0.8, 1.0)))
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup.system())
         .add_resource(CursorState::new())
@@ -54,12 +54,12 @@ fn setup(
             material: materials.add(Color::rgb(0.1, 0.4, 0.8).into()),
             transform: Transform::from_translation(Vec3::zero()),
             ..Default::default()
+        })
+        // light
+        .spawn(LightBundle {
+            transform: Transform::from_translation(Vec3::new(0.0, 50.0, 0.0)),
+            ..Default::default()
         });
-        // // light
-        // .spawn(LightBundle {
-        //     transform: Transform::from_translation(Vec3::new(0.0, 100.0, 0.0)),
-        //     ..Default::default()
-        // });
 }
 
 pub struct CursorState {

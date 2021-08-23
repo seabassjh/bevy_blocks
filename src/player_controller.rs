@@ -1,4 +1,4 @@
-use crate::voxel_terrain::generator::GenerateAtTag;
+use crate::voxel_terrain::{constants::{CHUNK_SIZE, MAX_CHUNK_HEIGHT}, generator::GenerateAtTag};
 use bevy::{prelude::*, render::camera::PerspectiveProjection};
 use bevy_prototype_character_controller::{
     controller::{BodyTag, CameraTag, CharacterController, HeadTag, YawTag},
@@ -42,7 +42,7 @@ impl Default for CharacterSettings {
 }
 
 fn setup_player_system(commands: &mut Commands, character_settings: Res<CharacterSettings>) {
-    let y_spawn_offset = 25.0;
+    let y_spawn_offset = (CHUNK_SIZE * MAX_CHUNK_HEIGHT / 2)  as f32;
     let box_y = 1.0;
     let body = commands
         .spawn((

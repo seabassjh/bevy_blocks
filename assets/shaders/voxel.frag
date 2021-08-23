@@ -49,14 +49,14 @@ void main() {
 
     vec3 normal = normalize(v_Normal);
     // accumulate color
-    vec3 color = vec3(0.0);
+    vec3 color = AmbientColor;
     for (int i=0; i<int(NumLights.x) && i<MAX_LIGHTS; ++i) {
         Light light = SceneLights[i];
         // compute Lambertian diffuse term
         vec3 light_dir = normalize(light.pos.xyz - v_Position);
         float diffuse = max(0.0, dot(normal, light_dir));
-        float dist = (distance(light.pos.xyz, v_Position) / 1.0);
-        diffuse = diffuse / (dist * dist);
+        // float dist = (distance(light.pos.xyz, v_Position) / 1.0);
+        // diffuse = diffuse / (dist * dist);
         // add light contribution
         color += diffuse * light.color.xyz;
     }
